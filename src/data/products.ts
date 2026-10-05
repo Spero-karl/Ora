@@ -12,7 +12,7 @@ export const PRODUCTS: Product[] = [
     isRecent: true,
     isPromo: true,
     promoBadgeText: '-15% Sélection Horlogère',
-    image: '/src/assets/images/promo_watch_cover_1791023597096.jpg',
+    image: './images/promo_watch_cover_1791023597096.jpg',
     description: 'Boîtier monobloc en titane sablé aérospatial, mouvement chronographe suisse et cuir sellier.',
     fullDescription: 'Pièce emblématique en titane Grade 5 hypoallergénique. Verre saphir double face inrayable, étanchéité certifiée 100 mètres et poussoirs de chrono biseautés.',
     features: [
@@ -45,7 +45,7 @@ export const PRODUCTS: Product[] = [
     isRecent: true,
     isPromo: true,
     promoBadgeText: '-15% Édition Limitée',
-    image: '/src/assets/images/promo_parfum_cover_1791024218895.jpg',
+    image: './images/promo_parfum_cover_1791024218895.jpg',
     description: 'Concentration pure à 28% aux accords de santal d’Australie, encens et ambre gris.',
     fullDescription: 'Créé à Grasse par un maître nez indépendant. Bergamote de Calabre en tête, cœur de cèdre fumé et fond chaud de santal et ambre gris.',
     features: [
@@ -76,7 +76,7 @@ export const PRODUCTS: Product[] = [
     isRecent: true,
     isPromo: true,
     promoBadgeText: '-12% Atelier',
-    image: '/src/assets/images/promo_watch_gold_1791024262834.jpg',
+    image: './images/promo_watch_gold_1791024262834.jpg',
     description: 'Céramique haute technologie inrayable avec index or rose 18k et calibre mécanique.',
     fullDescription: 'Sculpté dans une céramique noire frittée à 1500°C. Fond saphir transparent avec vue sur la masse oscillante Côtes de Genève.',
     features: [
@@ -108,7 +108,7 @@ export const PRODUCTS: Product[] = [
     isRecent: false,
     isPromo: true,
     promoBadgeText: '-13% Best-Seller',
-    image: '/src/assets/images/product_parfum_amber_1791024229905.jpg',
+    image: './images/product_parfum_amber_1791024229905.jpg',
     description: 'Cuir tanné florentin, gousse de vanille noire de Madagascar et touches de tabac.',
     fullDescription: 'Une élégance feutrée. La rondeur gourmande de la vanille Bourbon s’associe à la force du cuir vieilli et de la fève tonka toastée.',
     features: [
@@ -139,7 +139,7 @@ export const PRODUCTS: Product[] = [
     isRecent: true,
     isPromo: false,
     promoBadgeText: 'Classique',
-    image: '/src/assets/images/product_watch_automatic_1791024250532.jpg',
+    image: './images/product_watch_automatic_1791024250532.jpg',
     description: 'Design épuré d’inspiration moderniste, cadran blanc opalin et aiguilles acier bleui.',
     fullDescription: 'Une épure totale. Deux aiguilles fines glissent sur un cadran grainé blanc mat. Profil ultra-plat de 8,6 mm qui se glisse sous toute chemise.',
     features: [
@@ -169,7 +169,7 @@ export const PRODUCTS: Product[] = [
     isRecent: true,
     isPromo: false,
     promoBadgeText: 'Frais',
-    image: '/src/assets/images/product_parfum_blanc_1791024240360.jpg',
+    image: './images/product_parfum_blanc_1791024240360.jpg',
     description: 'Iris toscan poudré, fraîcheur minérale de vétiver blanc et muscs cotonneux.',
     fullDescription: 'Clarté cristalline inspirée d’un matin frais. L’iris noble de Florence s’adoucit avec le néroli et les muscs blancs vaporeux.',
     features: [
@@ -199,7 +199,7 @@ export const PRODUCTS: Product[] = [
     isRecent: true,
     isPromo: true,
     promoBadgeText: '-11% Pièce Maîtresse',
-    image: '/src/assets/images/watch_skeleton_1791187754455.jpg',
+    image: './images/watch_skeleton_1791187754455.jpg',
     description: 'Mouvement mécanique entièrement ajouré révélant le train d’engrenages et le balancier.',
     fullDescription: 'Pièce d’art horloger. Le cadran et le fond saphir laissent observer les oscillations à 28 800 alternances par heure et les rouages anglés à la main.',
     features: [
@@ -229,7 +229,7 @@ export const PRODUCTS: Product[] = [
     isRecent: true,
     isPromo: false,
     promoBadgeText: 'Rare',
-    image: '/src/assets/images/parfum_oud_noir_1791187767103.jpg',
+    image: './images/parfum_oud_noir_1791187767103.jpg',
     description: 'Bois de oud précieux du Cambodge, volutes d’encens sacré et touches d’ambre doré.',
     fullDescription: 'Puissant, majestueux et boisé. Un oud naturel rare distillé selon la tradition orientale et équilibré par des notes d’épices chaudes.',
     features: [
@@ -259,7 +259,7 @@ export const PRODUCTS: Product[] = [
     isRecent: true,
     isPromo: true,
     promoBadgeText: '-12% Sport Chic',
-    image: '/src/assets/images/watch_diver_steel_1791187779058.jpg',
+    image: './images/watch_diver_steel_1791187779058.jpg',
     description: 'Lunette tournante en céramique bleu nuit, couronne vissée et étanchéité certifiée 300m.',
     fullDescription: 'Conçue pour les grandes profondeurs et le port quotidien. Valve à hélium, index surdimensionnés luminescents et acier 316L massif.',
     features: [
@@ -289,7 +289,7 @@ export const PRODUCTS: Product[] = [
     isRecent: false,
     isPromo: true,
     promoBadgeText: '-12% Édition Mai',
-    image: '/src/assets/images/parfum_rose_chypre_1791187790943.jpg',
+    image: './images/parfum_rose_chypre_1791187790943.jpg',
     description: 'Pétales de rose de mai récoltés à l’aube à Grasse, mousse de chêne et patchouli noble.',
     fullDescription: 'Une interprétation moderne du chypre floral. Les roses de mai fraîches s’unissent à la fraîcheur de la bergamote et au velouté du patchouli.',
     features: [
@@ -319,7 +319,7 @@ export const PRODUCTS: Product[] = [
     isRecent: true,
     isPromo: false,
     promoBadgeText: 'Haute Joaillerie',
-    image: '/src/assets/images/watch_emerald_gold_1791187803480.jpg',
+    image: './images/watch_emerald_gold_1791187803480.jpg',
     description: 'Boîtier fin en or jaune 18 carats, cadran vert émeraude soleillé et cuir noir.',
     fullDescription: 'L’élégance habillée par excellence. Le reflet vert forêt profond du cadran soleillé contraste avec la chaleur de l’or 18 carats.',
     features: [
@@ -349,7 +349,7 @@ export const PRODUCTS: Product[] = [
     isRecent: true,
     isPromo: false,
     promoBadgeText: 'Nouveau',
-    image: '/src/assets/images/parfum_vetiver_1791187815093.jpg',
+    image: './images/parfum_vetiver_1791187815093.jpg',
     description: 'Racines de vétiver d’Haïti fumées, zeste de bergamote de Calabre et cèdre blanc.',
     fullDescription: 'Une création vivifiante et terrienne. Le zeste pétillant d’agrumes italiens réveille les facettes fumées et boisées du vétiver d’Haïti.',
     features: [
@@ -383,7 +383,7 @@ export const PROMO_COVERS = [
     title: 'Chrono Titane Grade 5 & Cuir Sellier',
     subtitle: 'Précision suisse, boîtier titane sablé',
     discountBadge: 'HORLOGERIE · -15%',
-    image: '/src/assets/images/promo_watch_cover_1791023597096.jpg',
+    image: './images/promo_watch_cover_1791023597096.jpg',
     price: 420,
     originalPrice: 490,
     category: 'Montres'
@@ -393,7 +393,7 @@ export const PROMO_COVERS = [
     title: 'Santal & Ambre Sauvage — Extrait',
     subtitle: 'Concentration à 28% et maturation à Grasse',
     discountBadge: 'PARFUMERIE · -15%',
-    image: '/src/assets/images/promo_parfum_cover_1791024218895.jpg',
+    image: './images/promo_parfum_cover_1791024218895.jpg',
     price: 195,
     originalPrice: 230,
     category: 'Parfums'
@@ -403,7 +403,7 @@ export const PROMO_COVERS = [
     title: 'Squelette Mécanique OrA — Calibre Ouvert',
     subtitle: 'Mouvement entièrement ajouré & verres saphir',
     discountBadge: 'NOUVEAUTÉ · -11%',
-    image: '/src/assets/images/watch_skeleton_1791187754455.jpg',
+    image: './images/watch_skeleton_1791187754455.jpg',
     price: 750,
     originalPrice: 850,
     category: 'Montres'
