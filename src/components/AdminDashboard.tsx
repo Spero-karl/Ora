@@ -1,46 +1,61 @@
-import React, { useState, useMemo, useRef } from 'react';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useMemo } from 'react';
 import {
   Package,
-  Plus,
-  Trash2,
-  Edit2,
-  CheckCircle2,
   Truck,
-  DollarSign,
-  ShoppingBag,
+  Layers,
+  Eye,
+  LogOut,
+  Search,
+  Plus,
+  MapPin,
+  KeyRound,
+  Check,
+  Edit2,
+  Trash2,
+  Star,
+  X,
+  Phone,
+  AlertCircle,
   MessageSquare,
   Send,
-  Save,
+  Copy,
   Clock,
-  Layers,
-  Search,
-  Upload,
-  Eye,
-  Star,
-  Users,
-  Calendar,
-  AlertCircle,
-  LogOut,
-  ArrowLeft,
+  CheckCircle2,
+  RotateCcw,
+  Wallet,
+  ShieldCheck,
+  User,
+  ExternalLink,
   ChevronRight,
-  Shield,
-  X
+  Sparkles
 } from 'lucide-react';
-import { Product, Order, ChatMessage, UserProfile, ClientAccount } from '../types';
+import { Order, DeliveryAgent, Product, UserProfile, OrderStatus, ChatMessage } from '../types';
+import { formatFCFA } from '../utils/formatCurrency';
+import { syncDeliveryAgentToSecureAccount } from '../utils/securityAuth';
 
 interface AdminDashboardProps {
   products: Product[];
-  onAddProduct: (prod: Product) => void;
-  onUpdateProduct: (prod: Product) => void;
-  onDeleteProduct: (prodId: string) => void;
-  onToggleHeroFeature: (prodId: string) => void;
+  onAddProduct: (product: Product) => void;
+  onUpdateProduct: (product: Product) => void;
+  onDeleteProduct: (productId: string) => void;
+  onToggleHeroFeature: (productId: string) => void;
   orders: Order[];
-  onUpdateOrderStatus: (orderId: string, status: Order['status']) => void;
+  onUpdateOrderStatus: (orderId: string, status: OrderStatus) => void;
+  onAssignDeliveryAgent: (orderId: string, agentId: string) => void;
+  onResolveDispute: (orderId: string, resolution: 'release_to_seller' | 'refund_to_buyer') => void;
+  deliveryAgents: DeliveryAgent[];
+  onAddDeliveryAgent: (agent: DeliveryAgent) => void;
   chatMessages: ChatMessage[];
-  onSendAdminReplyToClient: (clientId: string, text: string) => void;
+  onSendAdminReplyToClient: (clientId: string, replyText: string) => void;
   onSetClientSupportDuration?: (clientId: string, hours: number) => void;
   adminUser: UserProfile;
   onSwitchToClientView: () => void;
+  onOpenDeliveryPortal?: () => void;
   onLogout: () => void;
 }
 
@@ -52,830 +67,1332 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onToggleHeroFeature,
   orders,
   onUpdateOrderStatus,
+  onAssignDeliveryAgent,
+  onResolveDispute,
+  deliveryAgents,
+  onAddDeliveryAgent,
   chatMessages,
   onSendAdminReplyToClient,
-  onSetClientSupportDuration,
   adminUser,
   onSwitchToClientView,
   onLogout
 }) => {
-  const [activeTab, setActiveTab] = useState<'clients' | 'products' | 'chat'>('clients');
-  const [productSearch, setProductSearch] = useState('');
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
-  
-  // Product creation/edit state
-  const [isEditingProduct, setIsEditingProduct] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<'orders' | 'delivery' | 'products' | 'messages'>('orders');
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'delivered' | 'issue' | 'refunded'>('all');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Admin chat response
-  const [adminReplyText, setAdminReplyText] = useState('');
-  const [customSupportHours, setCustomSupportHours] = useState(24);
+  // Product modal
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // Group orders by Client ID: "differencier chaque id client avec ces commandes, les commandes ne doivent pas etre melanger"
-  const clientAccounts: ClientAccount[] = useMemo(() => {
-    const map = new Map<string, ClientAccount>();
+  // Delivery agent modal
+  const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
+  const [agentName, setAgentName] = useState('');
+  const [agentPhone, setAgentPhone] = useState('');
+  const [agentZone, setAgentZone] = useState('Haie Vive, Cotonou');
 
-    orders.forEach((ord) => {
-      const cId = ord.clientId || `client-${ord.buyerName?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'inconnu'}`;
-      if (!map.has(cId)) {
-        map.set(cId, {
-          clientId: cId,
-          name: ord.buyerName || 'Client OrA',
-          email: ord.buyerEmail || 'client@ora.luxury',
-          phone: ord.buyerPhone || 'Non renseigné',
-          address: ord.shippingAddress,
-          city: '',
-          orders: [],
-          totalSpent: 0,
-          supportDurationHours: 24,
-          supportExpiresAt: ord.createdAt ? ord.createdAt + 24 * 3600 * 1000 : Date.now() + 24 * 3600 * 1000
-        });
-      }
-      const acc = map.get(cId)!;
-      acc.orders.push(ord);
-      acc.totalSpent += ord.total;
-    });
+  // Concierge chat reply state
+  const [replyText, setReplyText] = useState('');
+  const [selectedChatClientId, setSelectedChatClientId] = useState<string>('user-karl');
 
-    return Array.from(map.values());
+  // ==========================================================
+  // Financial & Operational Metrics (Clair & Transparent)
+  // ==========================================================
+  const unlockedAmount = useMemo(() => {
+    return orders
+      .filter((o) => o.status === 'Livrée')
+      .reduce((sum, o) => sum + o.total, 0);
   }, [orders]);
 
-  // Selected client for assistance
-  const activeClient = clientAccounts.find((c) => c.clientId === selectedClientId) || clientAccounts[0];
+  const pendingAmount = useMemo(() => {
+    return orders
+      .filter((o) => o.status !== 'Livrée' && o.status !== 'Remboursée')
+      .reduce((sum, o) => sum + o.total, 0);
+  }, [orders]);
 
-  // Client-specific chat messages
-  const activeClientMessages = useMemo(() => {
-    if (!activeClient) return chatMessages;
-    return chatMessages.filter(
-      (m) => !m.clientId || m.clientId === activeClient.clientId
-    );
-  }, [chatMessages, activeClient]);
+  const refundedAmount = useMemo(() => {
+    return orders
+      .filter((o) => o.status === 'Remboursée')
+      .reduce((sum, o) => sum + o.total, 0);
+  }, [orders]);
 
-  // Handle local photo upload from device: "importer des photos depuis l'appareil et non uniquement referntier des lien en ligne"
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const activeOrdersCount = useMemo(() => {
+    return orders.filter((o) => o.status !== 'Livrée' && o.status !== 'Remboursée').length;
+  }, [orders]);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      if (base64 && editingProduct) {
-        setEditingProduct({ ...editingProduct, image: base64 });
-      }
-    };
-    reader.readAsDataURL(file);
-  };
+  const validatedOrdersCount = useMemo(() => {
+    return orders.filter((o) => o.status === 'Livrée').length;
+  }, [orders]);
 
-  const handleOpenNewProduct = () => {
-    setEditingProduct({
-      id: `prod-${Date.now()}`,
-      name: '',
-      category: 'Montres & Horlogerie',
-      categorySlug: 'montres',
-      price: 350,
-      isPromo: false,
-      isFeaturedInHero: false,
-      image: '/src/assets/images/promo_watch_cover_1791023597096.jpg',
-      description: 'Pièce exclusive créée selon les standards de la maison.',
-      inStock: true,
-      rating: 5.0,
-      reviewsCount: 1
+  const refundedOrdersCount = useMemo(() => {
+    return orders.filter((o) => o.status === 'Remboursée').length;
+  }, [orders]);
+
+  // Selected delivery agent for touching/viewing full profile details
+  const [selectedAgentDetails, setSelectedAgentDetails] = useState<DeliveryAgent | null>(null);
+
+  // Unique clients with chat messages
+  const clientsWithMessages = useMemo(() => {
+    const map = new Map<string, { clientId: string; name: string; lastMessage: string; timestamp: string }>();
+    chatMessages.forEach((m) => {
+      const cid = m.clientId || 'visiteur';
+      map.set(cid, {
+        clientId: cid,
+        name: m.senderName || 'Client',
+        lastMessage: m.text,
+        timestamp: m.timestamp
+      });
     });
-    setIsEditingProduct(true);
+    return Array.from(map.values());
+  }, [chatMessages]);
+
+  // Filtered orders list
+  const filteredOrders = useMemo(() => {
+    return orders.filter((ord) => {
+      if (orderFilter === 'pending' && (ord.status === 'Livrée' || ord.status === 'Remboursée')) return false;
+      if (orderFilter === 'delivered' && ord.status !== 'Livrée') return false;
+      if (orderFilter === 'issue' && ord.status !== 'Litige') return false;
+      if (orderFilter === 'refunded' && ord.status !== 'Remboursée') return false;
+
+      if (orderSearch.trim()) {
+        const q = orderSearch.toLowerCase();
+        const matchName = (ord.buyerName || '').toLowerCase().includes(q);
+        const matchPhone = (ord.buyerPhone || '').toLowerCase().includes(q);
+        const matchAddress = ord.shippingAddress.toLowerCase().includes(q);
+        const matchNote = (ord.deliveryNote || '').toLowerCase().includes(q);
+        const matchCode = (ord.deliveryCode || '').toLowerCase().includes(q);
+        return matchName || matchPhone || matchAddress || matchNote || matchCode;
+      }
+      return true;
+    });
+  }, [orders, orderFilter, orderSearch]);
+
+  const handleCopyId = (id: string) => {
+    navigator.clipboard?.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleSaveProductForm = (e: React.FormEvent) => {
+  const handleCreateAgent = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingProduct?.name || !editingProduct?.price) return;
+    if (!agentName.trim() || !agentPhone.trim()) return;
 
-    const fullProduct: Product = {
-      id: editingProduct.id || `prod-${Date.now()}`,
-      name: editingProduct.name,
-      category: editingProduct.categorySlug === 'parfums' ? 'Haute Parfumerie' : 'Montres & Horlogerie',
-      categorySlug: editingProduct.categorySlug || 'montres',
-      price: Number(editingProduct.price),
-      originalPrice: editingProduct.isPromo ? Number(editingProduct.originalPrice || editingProduct.price * 1.15) : undefined,
-      discountPercentage: editingProduct.isPromo ? Number(editingProduct.discountPercentage || 12) : undefined,
-      isPromo: editingProduct.isPromo || false,
-      isFeaturedInHero: editingProduct.isFeaturedInHero || false,
-      image: editingProduct.image || '/src/assets/images/promo_watch_cover_1791023597096.jpg',
-      description: editingProduct.description || 'Création d\'exception OrA.',
-      inStock: editingProduct.inStock !== false,
-      rating: editingProduct.rating || 5.0,
-      reviewsCount: editingProduct.reviewsCount || 12
+    const cleanZone = agentZone.trim() || 'Cotonou';
+    const citySlug = cleanZone.split(/[, -]/)[0].toUpperCase();
+    const cleanId = `LIVREUR-${citySlug}-${Math.floor(100 + Math.random() * 900)}`;
+
+    const newAgent: DeliveryAgent = {
+      id: cleanId,
+      name: agentName.trim(),
+      phone: agentPhone.trim(),
+      zone: cleanZone,
+      status: 'active',
+      completedDeliveries: 0,
+      rating: 5.0,
+      joinedDate: new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
     };
 
-    const exists = products.some((p) => p.id === fullProduct.id);
-    if (exists) {
-      onUpdateProduct(fullProduct);
-    } else {
-      onAddProduct(fullProduct);
-    }
+    onAddDeliveryAgent(newAgent);
+    syncDeliveryAgentToSecureAccount(newAgent);
+    setIsAgentModalOpen(false);
+    setAgentName('');
+    setAgentPhone('');
+    setAgentZone('Haie Vive, Cotonou');
+  };
 
-    setIsEditingProduct(false);
+  const handleSaveProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+
+    const exists = products.some((p) => p.id === editingProduct.id);
+    if (exists) {
+      onUpdateProduct(editingProduct);
+    } else {
+      onAddProduct(editingProduct);
+    }
+    setIsProductModalOpen(false);
     setEditingProduct(null);
   };
 
-  const handleSendAdminReply = (e: React.FormEvent) => {
+  const handleOpenAddProduct = () => {
+    setEditingProduct({
+      id: `prod-${Date.now()}`,
+      name: '',
+      price: 150000,
+      image: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=800&auto=format&fit=crop',
+      description: 'Pièce authentique d’exception pour le Bénin.',
+      category: 'Horlogerie',
+      categorySlug: 'horlogerie',
+      inStock: true,
+      rating: 5,
+      reviewsCount: 1,
+      isFeaturedInHero: false
+    });
+    setIsProductModalOpen(true);
+  };
+
+  const handleSendReply = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminReplyText.trim()) return;
-    const targetClientId = activeClient?.clientId || 'all';
-    onSendAdminReplyToClient(targetClientId, adminReplyText.trim());
-    setAdminReplyText('');
+    if (!replyText.trim()) return;
+    onSendAdminReplyToClient(selectedChatClientId, replyText.trim());
+    setReplyText('');
   };
-
-  const handleUpdateDuration = () => {
-    if (activeClient && onSetClientSupportDuration) {
-      onSetClientSupportDuration(activeClient.clientId, customSupportHours);
-    }
-  };
-
-  const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0);
-  const heroCount = products.filter((p) => p.isFeaturedInHero).length;
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] text-[#1C1917] flex flex-col">
-      {/* Full Page Admin Top Navigation Bar */}
-      <header className="sticky top-0 z-30 bg-[#1C1917] text-[#FAF7F2] border-b border-[#3E3832] shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+    <div className="min-h-screen bg-[#F1F5F9] text-slate-900 flex flex-col font-sans">
+      
+      {/* ======================================================== */}
+      {/* 1. TOP HEADER: CLEAN, PROFESSIONAL & HIGH CONTRAST      */}
+      {/* Note: NO "Espace Livreur" visible here as strictly asked */}
+      {/* ======================================================== */}
+      <header className="sticky top-0 z-30 bg-slate-900 text-white border-b-2 border-slate-800 px-4 sm:px-8 py-3.5 shadow-md">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+          
           <div className="flex items-center gap-3">
-            <span className="w-9 h-9 rounded-full bg-[#E6C694] text-[#1C1917] font-bold text-sm flex items-center justify-center shadow-xs">
-              👑
-            </span>
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center font-serif-luxury font-bold text-amber-300 text-lg">
+              O
+            </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-serif-luxury text-base sm:text-lg font-medium tracking-wide">
-                  Console d'Administration OrA
+              <h1 className="text-sm sm:text-base font-bold text-white tracking-wide flex items-center gap-2">
+                Panneau d'Administration
+                <span className="hidden md:inline-block px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-300 font-normal border border-slate-700">
+                  OrA Bénin
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#3E3832] text-[#E6C694] font-bold">
-                  {adminUser.id || 'AD-Admin'}
-                </span>
-              </div>
-              <p className="text-[11px] text-[#A89887] hidden sm:block">
-                Espace de gestion intégrale : commandes, clients, catalogue et assistance
+              </h1>
+              <p className="text-[11px] text-slate-400">
+                Gestion simplifiée des commandes, des livraisons et des paiements
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* View Client Mode button */}
             <button
               type="button"
               onClick={onSwitchToClientView}
-              className="py-1.5 px-3.5 bg-[#E6C694] text-[#1C1917] hover:bg-[#F3DDBA] rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs"
-              title="Voir la boutique telle que les clients la voient"
+              className="py-2 px-3.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
+              title="Consulter la boutique en vue client"
             >
-              <Eye className="w-3.5 h-3.5" />
-              <span>Aperçu Vue Client</span>
+              <Eye className="w-4 h-4 text-slate-950" />
+              <span>Voir la boutique</span>
             </button>
 
-            {/* Logout button */}
             <button
               type="button"
               onClick={onLogout}
-              className="p-2 rounded-full text-[#A89887] hover:text-[#FAF7F2] hover:bg-[#2A2623] transition-colors"
-              title="Déconnexion Administrateur"
+              className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-rose-950/60 hover:text-rose-300 text-slate-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              title="Se déconnecter"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Déconnexion</span>
             </button>
           </div>
+
         </div>
       </header>
 
-      {/* Metrics Bar */}
-      <section className="bg-[#FCFAF7] border-b border-[#ECE3D5]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center divide-y sm:divide-y-0 sm:divide-x divide-[#ECE3D5]">
-            <div className="p-1">
-              <p className="text-[10px] uppercase tracking-wider text-[#8C7A68] font-semibold">Chiffre d'Affaires</p>
-              <p className="font-serif-luxury font-bold text-base sm:text-xl text-[#1C1917] tabular-nums mt-0.5">
-                {totalRevenue.toFixed(2)} €
-              </p>
+      {/* ======================================================== */}
+      {/* 2. OPERATIONAL & FINANCIAL KPI CARDS (NETTES & ÉPURÉES)   */}
+      {/* Couleurs distinctes du fond, bordures précises, zen      */}
+      {/* ======================================================== */}
+      <section className="px-4 sm:px-8 pt-6 pb-2">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            
+            {/* Box 1: Commandes à traiter */}
+            <div className="bg-white border-2 border-slate-300 hover:border-slate-400 rounded-2xl p-5 shadow-md shadow-slate-200/50 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 flex items-center justify-center shadow-xs">
+                    <Package className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-900 block">
+                      Commandes à traiter
+                    </span>
+                    <span className="text-[10px] text-slate-500">Flux d'expéditions</span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
+                  {activeOrdersCount} en attente
+                </span>
+              </div>
+              <div className="my-4">
+                <p className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight font-serif-luxury">
+                  {activeOrdersCount}
+                </p>
+                <p className="text-xs font-medium text-slate-600 mt-1">
+                  Payées par les clients, à préparer ou en cours d'acheminement.
+                </p>
+              </div>
+              <div className="text-xs text-slate-700 pt-3 border-t-2 border-slate-100 font-semibold flex items-center justify-between">
+                <span className="text-slate-500">Total en cours :</span>
+                <span className="font-mono font-bold text-slate-900 text-sm bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200">{formatFCFA(pendingAmount)}</span>
+              </div>
             </div>
-            <div className="p-1">
-              <p className="text-[10px] uppercase tracking-wider text-[#8C7A68] font-semibold">Comptes Clients</p>
-              <p className="font-serif-luxury font-bold text-base sm:text-xl text-[#1C1917] tabular-nums mt-0.5">
-                {clientAccounts.length}
-              </p>
+
+            {/* Box 2: Ventes validées */}
+            <div className="bg-white border-2 border-slate-300 hover:border-slate-400 rounded-2xl p-5 shadow-md shadow-slate-200/50 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 flex items-center justify-center shadow-xs">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-900 block">
+                      Ventes validées
+                    </span>
+                    <span className="text-[10px] text-slate-500">Succès confirmés</span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-900 border border-emerald-200">
+                  {validatedOrdersCount} livrées
+                </span>
+              </div>
+              <div className="my-4">
+                <p className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight font-serif-luxury">
+                  {validatedOrdersCount}
+                </p>
+                <p className="text-xs font-medium text-slate-600 mt-1">
+                  Colis remis aux clients et confirmés par code secret.
+                </p>
+              </div>
+              <div className="text-xs text-emerald-800 pt-3 border-t-2 border-slate-100 font-semibold flex items-center justify-between">
+                <span className="text-slate-500">Total débloqué :</span>
+                <span className="font-mono font-bold text-emerald-900 text-sm bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">{formatFCFA(unlockedAmount)}</span>
+              </div>
             </div>
-            <div className="p-1 pt-2 sm:pt-1">
-              <p className="text-[10px] uppercase tracking-wider text-[#8C7A68] font-semibold">Commandes Réalisées</p>
-              <p className="font-serif-luxury font-bold text-base sm:text-xl text-[#1C1917] tabular-nums mt-0.5">
-                {orders.length}
-              </p>
+
+            {/* Box 3: Livreurs actifs & Remboursements */}
+            <div className="bg-white border-2 border-slate-300 hover:border-slate-400 rounded-2xl p-5 shadow-md shadow-slate-200/50 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-300 text-indigo-800 flex items-center justify-center shadow-xs">
+                    <Truck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-900 block">
+                      Livreurs actifs
+                    </span>
+                    <span className="text-[10px] text-slate-500">Réseau terrain</span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-950 border border-indigo-200">
+                  {deliveryAgents.length} disponibles
+                </span>
+              </div>
+              <div className="my-4">
+                <p className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight font-serif-luxury">
+                  {deliveryAgents.length}
+                </p>
+                <p className="text-xs font-medium text-slate-600 mt-1">
+                  Équipe de coursiers prête à livrer sur le terrain.
+                </p>
+              </div>
+              <div className="text-xs text-slate-700 pt-3 border-t-2 border-slate-100 font-semibold flex items-center justify-between">
+                <span className="text-slate-500">Total remboursé :</span>
+                <span className="font-mono font-bold text-slate-900 text-sm bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200">{formatFCFA(refundedAmount)}</span>
+              </div>
             </div>
-            <div className="p-1 pt-2 sm:pt-1">
-              <p className="text-[10px] uppercase tracking-wider text-[#8C7A68] font-semibold">Bannière Défilante</p>
-              <p className="font-serif-luxury font-bold text-base sm:text-xl text-[#1C1917] tabular-nums mt-0.5">
-                {heroCount || 3} articles actifs
-              </p>
-            </div>
+
           </div>
         </div>
       </section>
 
-      {/* Main Full-Page Content Workspace */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full space-y-6">
-        
-        {/* Navigation Tabs */}
-        <div className="border-b border-[#ECE3D5] flex space-x-6 text-xs sm:text-sm font-semibold overflow-x-auto no-scrollbar">
-          <button
-            type="button"
-            onClick={() => setActiveTab('clients')}
-            className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-              activeTab === 'clients'
-                ? 'border-[#1C1917] text-[#1C1917]'
-                : 'border-transparent text-[#8C7A68] hover:text-[#1C1917]'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Comptes Clients & Commandes Cloisonnées ({clientAccounts.length})</span>
-          </button>
+      {/* ======================================================== */}
+      {/* 4. NAVIGATION PAR ONGLETS (BOUTONS LISIBLES & ÉPURÉS)     */}
+      {/* ======================================================== */}
+      <div className="px-4 sm:px-8 mb-5">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-white border-2 border-slate-300 rounded-2xl p-1.5 shadow-sm flex items-center gap-1.5 overflow-x-auto">
+            
+            <button
+              type="button"
+              onClick={() => setActiveTab('orders')}
+              className={`py-2.5 px-4 rounded-xl flex items-center gap-2 text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'orders'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              <span>Commandes à traiter</span>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] ${
+                activeTab === 'orders' ? 'bg-amber-400 text-slate-950' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {orders.length}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('products')}
-            className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-              activeTab === 'products'
-                ? 'border-[#1C1917] text-[#1C1917]'
-                : 'border-transparent text-[#8C7A68] hover:text-[#1C1917]'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            <span>Catalogue & Bannière Défilante ({products.length})</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('delivery')}
+              className={`py-2.5 px-4 rounded-xl flex items-center gap-2 text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'delivery'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Truck className="w-4 h-4" />
+              <span>Livreurs actifs</span>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] ${
+                activeTab === 'delivery' ? 'bg-blue-400 text-slate-950' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {deliveryAgents.length}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('chat')}
-            className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-              activeTab === 'chat'
-                ? 'border-[#1C1917] text-[#1C1917]'
-                : 'border-transparent text-[#8C7A68] hover:text-[#1C1917]'
-            }`}
-          >
-            <MessageSquare className="w-4 h-4" />
-            <span>Assistance Personnalisée & Support (24h)</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('products')}
+              className={`py-2.5 px-4 rounded-xl flex items-center gap-2 text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'products'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              <span>Articles & Stock</span>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] ${
+                activeTab === 'products' ? 'bg-amber-400 text-slate-950' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {products.length}
+              </span>
+            </button>
 
-        {/* 1. COMPTES CLIENTS & COMMANDES CLOISONNÉES PAR ID */}
-        {activeTab === 'clients' && (
-          <div className="space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <h3 className="font-serif-luxury text-lg font-bold text-[#1C1917]">
-                  Comptes Clients & Historique Cloisonné des Commandes
-                </h3>
-                <p className="text-xs text-[#78716C]">
-                  Chaque client est identifié par son ID unique. Les commandes ne sont jamais mélangées.
-                </p>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('messages')}
+              className={`py-2.5 px-4 rounded-xl flex items-center gap-2 text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'messages'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Messages clients</span>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] ${
+                activeTab === 'messages' ? 'bg-amber-400 text-slate-950' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {chatMessages.length}
+              </span>
+            </button>
 
-            {clientAccounts.length === 0 ? (
-              <div className="bg-white border border-[#ECE3D5] rounded-3xl p-12 text-center space-y-3">
-                <Users className="w-12 h-12 text-[#A89887] mx-auto stroke-1" />
-                <h4 className="font-serif-luxury text-base font-semibold text-[#1C1917]">
-                  Aucun compte client enregistré
-                </h4>
-                <p className="text-xs text-[#78716C] max-w-md mx-auto">
-                  Dès qu'un visiteur s'authentifie et passe commande, son compte apparaîtra ici avec l'intégralité de ses achats et le suivi de livraison.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4">
-                {clientAccounts.map((account) => (
-                  <div
-                    key={account.clientId}
-                    className="bg-white border border-[#ECE3D5] rounded-2xl p-5 shadow-xs space-y-4 text-xs"
-                  >
-                    {/* Client Identity Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#ECE3D5] gap-3">
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-10 h-10 rounded-full bg-[#1C1917] text-[#FAF7F2] flex items-center justify-center font-serif-luxury text-base font-bold shadow-xs">
-                          {account.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-serif-luxury text-base font-bold text-[#1C1917]">
-                              {account.name}
-                            </h4>
-                            <span className="font-mono text-[10px] bg-[#F3ECE1] text-[#1C1917] px-2.5 py-0.5 rounded-full font-bold">
-                              ID: {account.clientId}
-                            </span>
-                          </div>
-                          <p className="text-xs text-[#78716C] mt-0.5">
-                            {account.email} · {account.phone} · {account.address}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-[#1C1917] tabular-nums bg-[#FCFAF7] px-3 py-1.5 rounded-xl border border-[#ECE3D5]">
-                          Cumul dépensé : {account.totalSpent.toFixed(2)} €
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedClientId(account.clientId);
-                            setActiveTab('chat');
-                          }}
-                          className="py-1.5 px-3.5 bg-[#1C1917] hover:bg-[#2A2623] text-[#FAF7F2] rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5 text-[#E6C694]" />
-                          <span>Assistance (24h)</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Orders under this specific client */}
-                    <div className="space-y-2.5">
-                      <span className="text-[11px] uppercase font-bold text-[#8C7A68] tracking-wider block">
-                        Commandes enregistrées ({account.orders.length}) :
-                      </span>
-
-                      <div className="space-y-2.5">
-                        {account.orders.map((ord) => (
-                          <div
-                            key={ord.id}
-                            className="bg-[#FCFAF7] border border-[#ECE3D5] rounded-xl p-3.5 space-y-2.5"
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 pb-2 border-b border-[#ECE3D5]">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-mono font-bold text-sm text-[#1C1917]">#{ord.id}</span>
-                                <span className="text-xs text-[#8C7A68]">· Date : {ord.date}</span>
-                                <span className="text-[10px] bg-white px-2.5 py-0.5 rounded-full border border-[#D9CDBF] font-medium text-[#44403C]">
-                                  {ord.paymentMethod}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-[#78716C] font-medium">Statut de livraison :</span>
-                                <select
-                                  value={ord.status}
-                                  onChange={(e) =>
-                                    onUpdateOrderStatus(ord.id, e.target.value as Order['status'])
-                                  }
-                                  className="text-xs font-bold py-1 px-2.5 rounded-lg border border-[#D9CDBF] bg-white text-[#1C1917] focus:outline-none"
-                                >
-                                  <option value="Confirmée">Confirmée</option>
-                                  <option value="En préparation">En préparation</option>
-                                  <option value="Expédiée">Expédiée</option>
-                                  <option value="Livrée">Livrée</option>
-                                </select>
-                              </div>
-                            </div>
-
-                            <div className="space-y-1.5">
-                              {ord.items.map((it, idx) => (
-                                <div key={idx} className="flex items-center justify-between text-xs">
-                                  <div className="flex items-center gap-2.5">
-                                    <img
-                                      src={it.productImage}
-                                      alt={it.productName}
-                                      className="w-9 h-9 rounded-lg object-cover border border-[#ECE3D5]"
-                                    />
-                                    <div>
-                                      <p className="font-semibold text-[#1C1917]">{it.productName}</p>
-                                      <p className="text-[10px] text-[#8C7A68]">Quantité : {it.quantity}</p>
-                                    </div>
-                                  </div>
-                                  <span className="font-bold tabular-nums text-sm">{it.price * it.quantity} €</span>
-                                </div>
-                              ))}
-                            </div>
-
-                            <div className="pt-2 border-t border-[#ECE3D5] flex flex-col sm:flex-row justify-between text-xs text-[#78716C] gap-1">
-                              <span><strong>Adresse de livraison :</strong> {ord.shippingAddress}</span>
-                              <span className="font-bold text-sm text-[#1C1917] sm:text-right">
-                                Total réglé : {ord.total.toFixed(2)} €
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
-        )}
+        </div>
+      </div>
 
-        {/* 2. CATALOGUE & BANNIERE DEFILANTE */}
-        {activeTab === 'products' && (
+      {/* ======================================================== */}
+      {/* 5. ESPACE PRINCIPAL DE TRAVAIL                           */}
+      {/* ======================================================== */}
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-8 pb-12 flex-1">
+        
+        {/* ====================================================== */}
+        {/* ONGLET 1 : COMMANDES CLIENTS                           */}
+        {/* ====================================================== */}
+        {activeTab === 'orders' && (
           <div className="space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="font-serif-luxury text-lg font-bold text-[#1C1917]">
-                  Catalogue & Articles en Bannière Défilante
-                </h3>
-                <p className="text-xs text-[#78716C]">
-                  Gérez vos montres et parfums, importez vos photos depuis l'appareil et sélectionnez les articles de la bannière.
-                </p>
+            
+            {/* Barre de Recherche et Filtres */}
+            <div className="bg-white p-4 rounded-2xl border-2 border-slate-300 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                <input
+                  type="text"
+                  placeholder="Rechercher par nom de client, numéro de téléphone, quartier ou code..."
+                  value={orderSearch}
+                  onChange={(e) => setOrderSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 text-xs bg-slate-50 border-2 border-slate-300 rounded-xl focus:outline-none focus:border-slate-900 text-slate-900 transition-colors font-medium"
+                />
               </div>
 
-              <div className="flex items-center gap-2.5">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#8C7A68]" />
-                  <input
-                    type="text"
-                    placeholder="Filtrer un article..."
-                    value={productSearch}
-                    onChange={(e) => setProductSearch(e.target.value)}
-                    className="w-48 sm:w-60 text-xs pl-8 pr-3 py-2 bg-white border border-[#D9CDBF] rounded-xl focus:outline-none"
-                  />
-                </div>
-
+              <div className="flex items-center gap-1.5 text-xs overflow-x-auto pb-1 md:pb-0">
                 <button
                   type="button"
-                  onClick={handleOpenNewProduct}
-                  className="py-2 px-4 bg-[#1C1917] text-[#FAF7F2] rounded-full text-xs font-semibold flex items-center gap-1.5 hover:bg-[#2A2623] shadow-xs"
+                  onClick={() => setOrderFilter('all')}
+                  className={`px-3 py-2 rounded-xl transition-colors font-bold whitespace-nowrap ${
+                    orderFilter === 'all'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Créer un article</span>
+                  Toutes ({orders.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderFilter('pending')}
+                  className={`px-3 py-2 rounded-xl transition-colors font-bold whitespace-nowrap ${
+                    orderFilter === 'pending'
+                      ? 'bg-amber-500 text-slate-950'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  À traiter ({activeOrdersCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderFilter('delivered')}
+                  className={`px-3 py-2 rounded-xl transition-colors font-bold whitespace-nowrap ${
+                    orderFilter === 'delivered'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Ventes validées ({validatedOrdersCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderFilter('issue')}
+                  className={`px-3 py-2 rounded-xl transition-colors font-bold whitespace-nowrap ${
+                    orderFilter === 'issue'
+                      ? 'bg-rose-700 text-white'
+                      : 'text-rose-700 hover:bg-rose-50'
+                  }`}
+                >
+                  Problèmes ({orders.filter((o) => o.status === 'Litige').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderFilter('refunded')}
+                  className={`px-3 py-2 rounded-xl transition-colors font-bold whitespace-nowrap ${
+                    orderFilter === 'refunded'
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Remboursées ({refundedOrdersCount})
                 </button>
               </div>
             </div>
 
-            <div className="bg-[#FCFAF7] border border-[#ECE3D5] p-3.5 rounded-2xl text-xs text-[#57534E] flex items-center gap-2.5">
-              <Star className="w-4 h-4 text-[#D4AF37] shrink-0" />
-              <p>
-                Cliquez sur le bouton <strong>« ★ Bannière défilante »</strong> pour choisir quels articles apparaissent sur la grande bannière d'accueil vue par tous les visiteurs.
-              </p>
-            </div>
-
-            {/* Products grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {products
-                .filter((p) => p.name.toLowerCase().includes(productSearch.toLowerCase()))
-                .map((p) => (
-                  <div
-                    key={p.id}
-                    className="bg-white border border-[#ECE3D5] rounded-2xl p-4 flex items-center justify-between gap-3 shadow-2xs"
-                  >
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <img
-                        src={p.image}
-                        alt={p.name}
-                        className="w-16 h-16 rounded-xl object-cover border border-[#ECE3D5] shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] uppercase font-bold text-[#8C7A68]">
-                            {p.categorySlug === 'montres' ? 'Montre' : 'Parfum'}
-                          </span>
-                          {p.isPromo && (
-                            <span className="bg-[#1C1917] text-white text-[9px] px-2 py-0.2 rounded-full font-bold">
-                              Promo
-                            </span>
-                          )}
-                          {p.isFeaturedInHero && (
-                            <span className="bg-[#E6C694] text-[#1C1917] text-[9px] px-2 py-0.2 rounded-full font-bold flex items-center gap-0.5">
-                              <Star className="w-2.5 h-2.5 fill-current" /> Bannière active
-                            </span>
-                          )}
-                        </div>
-                        <h4 className="font-serif-luxury font-semibold text-sm text-[#1C1917] truncate mt-0.5">
-                          {p.name}
-                        </h4>
-                        <p className="text-sm font-bold text-[#1C1917] tabular-nums mt-0.5">
-                          {p.price} €
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => onToggleHeroFeature(p.id)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all ${
-                          p.isFeaturedInHero
-                            ? 'bg-[#1C1917] text-[#E6C694] border border-[#1C1917]'
-                            : 'bg-white text-[#78716C] border border-[#D9CDBF] hover:bg-[#F3ECE1]'
-                        }`}
-                        title="Ajouter ou retirer de la bannière défilante"
-                      >
-                        <Star className={`w-3 h-3 ${p.isFeaturedInHero ? 'fill-current' : ''}`} />
-                        <span>{p.isFeaturedInHero ? 'En bannière' : '+ Bannière'}</span>
-                      </button>
-
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingProduct(p);
-                            setIsEditingProduct(true);
-                          }}
-                          className="p-2 rounded-xl border border-[#D9CDBF] hover:bg-[#F3ECE1] text-[#44403C]"
-                          title="Modifier l'article"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onDeleteProduct(p.id)}
-                          className="p-2 rounded-xl border border-red-200 hover:bg-red-50 text-red-600"
-                          title="Supprimer l'article"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {/* 3. ASSISTANCE CLIENT & RÈGLE DES 24H */}
-        {activeTab === 'chat' && (
-          <div className="space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#ECE3D5] gap-3">
-              <div>
-                <h3 className="font-serif-luxury text-lg font-bold text-[#1C1917]">
-                  Assistance Déclenchée au Paiement & Règle des 24h
-                </h3>
-                <p className="text-xs text-[#78716C]">
-                  L'assistance s'active au paiement et dure 24h par défaut. Vous pouvez ajuster la durée pour chaque client ci-dessous.
+            {/* Liste des Cartes Commandes */}
+            {filteredOrders.length === 0 ? (
+              <div className="bg-white border-2 border-slate-300 rounded-2xl p-12 text-center space-y-3 shadow-sm">
+                <Package className="w-10 h-10 text-slate-400 mx-auto" />
+                <h3 className="text-sm font-bold text-slate-900">Aucune commande trouvée</h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  {orderSearch
+                    ? 'Aucun résultat ne correspond à votre filtre de recherche.'
+                    : 'Les nouvelles commandes passées sur la boutique apparaîtront ici immédiatement.'}
                 </p>
               </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredOrders.map((ord, index) => {
+                  const isDelivered = ord.status === 'Livrée';
+                  const isReported = ord.status === 'Litige';
+                  const isRefunded = ord.status === 'Remboursée';
 
-              {activeClient && (
-                <div className="flex items-center gap-2 bg-[#FCFAF7] border border-[#ECE3D5] p-2 rounded-xl text-xs">
-                  <Clock className="w-4 h-4 text-[#8C7A68]" />
-                  <span className="font-medium">Durée pour {activeClient.name} :</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={168}
-                    value={customSupportHours}
-                    onChange={(e) => setCustomSupportHours(Number(e.target.value))}
-                    className="w-14 text-center bg-white border border-[#D9CDBF] rounded-lg px-1.5 py-1 text-xs font-bold"
-                  />
-                  <span>h</span>
-                  <button
-                    type="button"
-                    onClick={handleUpdateDuration}
-                    className="px-2.5 py-1 bg-[#1C1917] text-[#FAF7F2] rounded-lg text-xs font-semibold hover:bg-[#2A2623]"
-                  >
-                    Appliquer
-                  </button>
-                </div>
-              )}
-            </div>
+                  return (
+                    <div
+                      key={ord.id}
+                      className={`rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden border-2 ${
+                        isDelivered
+                          ? 'bg-emerald-50/70 border-emerald-400 ring-2 ring-emerald-200/50'
+                          : isReported
+                          ? 'bg-rose-50/50 border-rose-400'
+                          : isRefunded
+                          ? 'bg-slate-50 border-slate-300 opacity-90'
+                          : 'bg-white border-slate-300'
+                      }`}
+                    >
+                      {/* Entête de carte avec couleur distincte pour ventes validées */}
+                      <div className={`px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-2 ${
+                        isDelivered
+                          ? 'bg-emerald-100/90 border-emerald-300 text-emerald-950'
+                          : isReported
+                          ? 'bg-rose-100 border-rose-200 text-rose-950'
+                          : 'bg-slate-100 border-slate-200'
+                      }`}>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <span className={`font-extrabold text-sm px-2.5 py-1 rounded-lg border ${
+                            isDelivered
+                              ? 'bg-white text-emerald-900 border-emerald-300'
+                              : 'bg-white text-slate-900 border-slate-300'
+                          }`}>
+                            Commande #{index + 1}
+                          </span>
+                          {isDelivered && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-700 text-white flex items-center gap-1 shadow-xs">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Vente validée
+                            </span>
+                          )}
+                          <span className="font-bold text-xs text-slate-900">
+                            {ord.buyerName || 'Client OrA'}
+                          </span>
+                          <span className="text-slate-400">·</span>
+                          <span className="text-xs text-slate-600">
+                            {ord.date}
+                          </span>
+                        </div>
 
-            {/* Client selector tabs */}
-            {clientAccounts.length > 0 && (
-              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-                {clientAccounts.map((acc) => (
-                  <button
-                    key={acc.clientId}
-                    type="button"
-                    onClick={() => setSelectedClientId(acc.clientId)}
-                    className={`px-3.5 py-2 rounded-xl border text-xs font-semibold whitespace-nowrap transition-all ${
-                      (selectedClientId || clientAccounts[0].clientId) === acc.clientId
-                        ? 'bg-[#1C1917] text-[#FAF7F2] border-[#1C1917]'
-                        : 'bg-white text-[#57534E] border-[#D9CDBF] hover:bg-[#F3ECE1]'
-                    }`}
-                  >
-                    {acc.name} ({acc.orders.length} commande{acc.orders.length > 1 ? 's' : ''})
-                  </button>
-                ))}
+                        {/* Code secret de livraison & Sélecteur de statut */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {ord.deliveryCode && (
+                            <div
+                              onClick={() => handleCopyId(ord.deliveryCode)}
+                              className="cursor-pointer px-3 py-1 bg-amber-50 border-2 border-amber-300 rounded-lg text-xs flex items-center gap-1.5 hover:bg-amber-100 transition-colors"
+                              title="Cliquer pour copier le code de remise"
+                            >
+                              <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                              <span className="font-mono font-extrabold text-amber-950">
+                                Code : {ord.deliveryCode}
+                              </span>
+                              {copiedId === ord.deliveryCode ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-700" />
+                              ) : (
+                                <Copy className="w-3 h-3 text-amber-600" />
+                              )}
+                            </div>
+                          )}
+
+                          <select
+                            value={ord.status}
+                            onChange={(e) => onUpdateOrderStatus(ord.id, e.target.value as OrderStatus)}
+                            className={`text-xs font-extrabold py-1.5 px-3 rounded-lg border-2 focus:outline-none transition-all ${
+                              isDelivered
+                                ? 'bg-emerald-100 text-emerald-950 border-emerald-400'
+                                : isReported
+                                ? 'bg-rose-100 text-rose-950 border-rose-400'
+                                : isRefunded
+                                ? 'bg-slate-200 text-slate-800 border-slate-400'
+                                : 'bg-white text-slate-900 border-slate-300'
+                            }`}
+                          >
+                            <option value="Confirmée">À préparer</option>
+                            <option value="En préparation">En préparation</option>
+                            <option value="Expédiée">En livraison</option>
+                            <option value="Livrée">Livrée</option>
+                            <option value="Litige">Problème signalé</option>
+                            <option value="Remboursée">Remboursée</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Corps de la carte : Coordonnées & Livreur */}
+                      <div className="p-5 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                          
+                          {/* Coordonnées & Adresse */}
+                          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                            <span className="text-[10px] uppercase font-extrabold text-slate-500 block tracking-wide">
+                              Lieu de livraison & Contact
+                            </span>
+                            <div className="flex items-start gap-2">
+                              <MapPin className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="font-bold text-slate-900 text-xs">
+                                  {ord.shippingAddress}
+                                </p>
+                                {ord.deliveryNote && (
+                                  <p className="text-[11px] text-slate-600 mt-0.5">
+                                    Indication : {ord.deliveryNote}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            {ord.buyerPhone && (
+                              <div className="pt-1 flex items-center gap-1.5">
+                                <Phone className="w-3.5 h-3.5 text-emerald-700" />
+                                <a
+                                  href={`tel:${ord.buyerPhone}`}
+                                  className="text-emerald-800 font-bold hover:underline"
+                                >
+                                  {ord.buyerPhone}
+                                </a>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Attribution du Livreur */}
+                          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                            <span className="text-[10px] uppercase font-extrabold text-slate-500 block tracking-wide">
+                              Livreur assigné à cette course
+                            </span>
+                            <select
+                              value={ord.assignedDeliveryAgentId || ''}
+                              onChange={(e) => onAssignDeliveryAgent(ord.id, e.target.value)}
+                              className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-slate-900"
+                            >
+                              <option value="">-- Aucun livreur assigné --</option>
+                              {deliveryAgents.map((ag) => (
+                                <option key={ag.id} value={ag.id}>
+                                  {ag.name} · {ag.zone}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="text-[11px] text-slate-600">
+                              {ord.assignedDeliveryAgentName ? (
+                                <span className="text-emerald-800 font-semibold">
+                                  ✓ Assigné à {ord.assignedDeliveryAgentName}. Une notification locale a été envoyée.
+                                </span>
+                              ) : (
+                                <span>Sélectionnez un livreur pour lui attribuer la course.</span>
+                              )}
+                            </p>
+                          </div>
+
+                        </div>
+
+                        {/* Bannière en cas de problème signalé */}
+                        {ord.disputeReason && (
+                          <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-rose-950">
+                            <div className="flex items-start gap-2.5">
+                              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                              <div>
+                                <strong className="block text-rose-900 font-extrabold">
+                                  Problème signalé par le livreur :
+                                </strong>
+                                <span className="font-medium">{ord.disputeReason}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => onResolveDispute(ord.id, 'release_to_seller')}
+                                className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-colors"
+                              >
+                                Valider la livraison
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onResolveDispute(ord.id, 'refund_to_buyer')}
+                                className="px-3.5 py-2 bg-rose-800 hover:bg-rose-900 text-white rounded-lg text-xs font-bold transition-colors"
+                              >
+                                Rembourser le client
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Pied de carte : Articles et Total */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-200">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {ord.items.map((it, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center gap-2 bg-slate-50 p-1.5 pr-3 rounded-lg border border-slate-200"
+                              >
+                                <img
+                                  src={it.productImage}
+                                  alt={it.productName}
+                                  className="w-7 h-7 object-cover rounded-md border border-slate-300"
+                                />
+                                <span className="text-xs font-bold text-slate-800 max-w-[200px] truncate">
+                                  {it.quantity}x {it.productName}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="text-right">
+                            <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                              Montant total
+                            </span>
+                            <span className={`text-base font-extrabold font-mono ${
+                              isDelivered
+                                ? 'text-emerald-950 bg-emerald-100/90 px-2.5 py-1 rounded-lg border border-emerald-300 inline-block'
+                                : 'text-slate-900'
+                            }`}>
+                              {formatFCFA(ord.total)}
+                            </span>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
-            {/* Chat discussion view */}
-            <div className="bg-white border border-[#ECE3D5] rounded-3xl p-5 h-96 overflow-y-auto space-y-3 text-xs shadow-2xs">
-              {activeClientMessages.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-[#A89887] space-y-2">
-                  <MessageSquare className="w-10 h-10 stroke-1" />
-                  <p className="font-medium text-sm text-[#1C1917]">Aucun échange avec {activeClient?.name || 'ce client'}</p>
-                  <p className="text-xs text-[#78716C]">Vous pouvez initier l'assistance directement via le formulaire ci-dessous.</p>
-                </div>
-              ) : (
-                activeClientMessages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${
-                      msg.sender === 'admin' ? 'items-end' : 'items-start'
-                    }`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-2xl px-4 py-2.5 shadow-2xs ${
-                        msg.sender === 'admin'
-                          ? 'bg-[#1C1917] text-[#FAF7F2]'
-                          : 'bg-[#F2EDE4] text-[#1C1917]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3 text-[10px] opacity-75 mb-1">
-                        <span className="font-semibold">{msg.senderName}</span>
-                        <span>{msg.timestamp}</span>
-                      </div>
-                      <p className="text-xs leading-relaxed">{msg.text}</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <form onSubmit={handleSendAdminReply} className="flex gap-2.5">
-              <input
-                type="text"
-                placeholder={`Écrire une réponse d'assistance à ${activeClient?.name || 'ce client'}...`}
-                value={adminReplyText}
-                onChange={(e) => setAdminReplyText(e.target.value)}
-                className="flex-1 text-xs px-4 py-2.5 bg-white border border-[#D9CDBF] rounded-xl focus:outline-none"
-              />
-              <button
-                type="submit"
-                className="py-2.5 px-5 bg-[#1C1917] text-[#FAF7F2] rounded-xl text-xs font-semibold flex items-center gap-1.5 hover:bg-[#2A2623] shadow-xs"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>Envoyer au client</span>
-              </button>
-            </form>
           </div>
         )}
 
-      </div>
+        {/* ====================================================== */}
+        {/* ONGLET 2 : LIVREURS ACTIFS                             */}
+        {/* ====================================================== */}
+        {activeTab === 'delivery' && (
+          <div className="space-y-5">
+            {/* Action Bar for Adding Delivery Agent */}
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-slate-300 shadow-sm flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center font-bold shadow-xs">
+                  <Truck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Livreurs Partenaires
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {deliveryAgents.length} livreur{deliveryAgents.length > 1 ? 's' : ''} actif{deliveryAgents.length > 1 ? 's' : ''} · Touchez un livreur pour afficher sa fiche
+                  </p>
+                </div>
+              </div>
 
-      {/* Product Edit / Creation Modal */}
-      {isEditingProduct && editingProduct && (
-        <div className="fixed inset-0 bg-[#141210]/65 z-50 p-4 sm:p-6 overflow-y-auto flex items-center justify-center">
-          <div className="bg-[#FAF7F2] border border-[#ECE3D5] rounded-3xl p-6 w-full max-w-xl shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-[#ECE3D5] pb-3">
-              <h3 className="font-serif-luxury text-base font-bold text-[#1C1917]">
-                {products.some((p) => p.id === editingProduct.id)
-                  ? 'Modifier l\'article'
-                  : 'Créer un nouvel article'}
-              </h3>
               <button
                 type="button"
-                onClick={() => setIsEditingProduct(false)}
-                className="p-1 rounded-full text-[#8C7A68] hover:text-[#1C1917]"
+                onClick={() => setIsAgentModalOpen(true)}
+                className="py-2.5 px-4 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm shrink-0 cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-amber-400" />
+                <span>Ajouter un livreur</span>
+              </button>
+            </div>
+
+            {/* Delivery Agents Interactive Grid (Touch to view detailed info) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {deliveryAgents.map((ag) => (
+                <div
+                  key={ag.id}
+                  onClick={() => setSelectedAgentDetails(ag)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedAgentDetails(ag);
+                    }
+                  }}
+                  className="bg-white border-2 border-slate-300 hover:border-slate-500 rounded-2xl p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col justify-between cursor-pointer group text-left select-none"
+                  title="Touchez pour afficher les détails du livreur"
+                >
+                  <div className="space-y-3.5">
+                    {/* Header: Avatar, Name & Status */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center font-bold text-base shadow-xs group-hover:scale-105 transition-transform">
+                          {ag.name.charAt(0)}
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900 group-hover:text-amber-800 transition-colors">
+                            {ag.name}
+                          </h4>
+                          <span className="text-xs text-slate-600 font-medium">
+                            {ag.phone}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-950 border border-emerald-300">
+                        Actif
+                      </span>
+                    </div>
+
+                    {/* Zone & Vehicle Info */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
+                      <div className="flex items-start gap-1.5 text-slate-800 font-semibold">
+                        <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                        <span className="line-clamp-1">{ag.zone}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-slate-500 text-[11px]">
+                        <Truck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>Véhicule : {ag.vehicle || 'Moto Express'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer with Performance and Tap prompt */}
+                  <div className="pt-3 mt-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600 font-semibold">
+                    <div className="flex items-center gap-2">
+                      <span className="text-amber-600 font-bold">★ {ag.rating || '5.0'}</span>
+                      <span className="text-slate-300">·</span>
+                      <span>{ag.completedDeliveries} courses</span>
+                    </div>
+                    <span className="text-amber-800 text-[11px] font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                      Voir la fiche <ChevronRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ====================================================== */}
+        {/* ONGLET 3 : ARTICLES & STOCK                            */}
+        {/* ====================================================== */}
+        {activeTab === 'products' && (
+          <div className="space-y-5">
+            <div className="bg-white p-5 rounded-2xl border-2 border-slate-300 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Catalogue & Pièces de Luxe
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Ajoutez, modifiez ou mettez en avant les créations sur la boutique.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenAddProduct}
+                className="py-2.5 px-4 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+              >
+                <Plus className="w-4 h-4 text-amber-400" />
+                <span>Ajouter un Article</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+              {products.map((p) => (
+                <div
+                  key={p.id}
+                  className="bg-white border-2 border-slate-300 rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between hover:shadow-md transition-all"
+                >
+                  <div className="relative aspect-square bg-slate-100 overflow-hidden">
+                    <img
+                      src={p.image}
+                      alt={p.name}
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onToggleHeroFeature(p.id)}
+                      className={`absolute top-2.5 right-2.5 p-1.5 rounded-full border shadow-sm transition-all ${
+                        p.isFeaturedInHero
+                          ? 'bg-amber-400 text-slate-950 border-amber-500'
+                          : 'bg-white/80 text-slate-400 border-slate-300 hover:text-slate-900'
+                      }`}
+                      title={p.isFeaturedInHero ? 'Mis en avant dans le Hero' : 'Mettre en avant dans le Hero'}
+                    >
+                      <Star className="w-3.5 h-3.5 fill-current" />
+                    </button>
+                  </div>
+
+                  <div className="p-4 space-y-2 flex-1 flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400">
+                        {p.category}
+                      </span>
+                      <h4 className="text-xs font-bold text-slate-900 line-clamp-1">
+                        {p.name}
+                      </h4>
+                      <p className="text-sm font-extrabold text-slate-900 font-mono mt-1">
+                        {formatFCFA(p.price)}
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingProduct(p);
+                          setIsProductModalOpen(true);
+                        }}
+                        className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                        title="Modifier"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteProduct(p.id)}
+                        className="p-1.5 text-rose-600 hover:text-rose-900 hover:bg-rose-50 rounded-lg transition-colors"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ====================================================== */}
+        {/* ONGLET 4 : MESSAGES CLIENTS                            */}
+        {/* ====================================================== */}
+        {activeTab === 'messages' && (
+          <div className="bg-white border-2 border-slate-300 rounded-2xl shadow-sm overflow-hidden grid grid-cols-1 md:grid-cols-3 min-h-[460px]">
+            
+            {/* Colonne Gauche : Liste des clients */}
+            <div className="border-b-2 md:border-b-0 md:border-r-2 border-slate-200 bg-slate-50 p-4 space-y-2">
+              <span className="text-[10px] uppercase font-extrabold text-slate-500 block px-1">
+                Conversations Clients
+              </span>
+              <div className="space-y-1">
+                {clientsWithMessages.map((c) => (
+                  <button
+                    key={c.clientId}
+                    type="button"
+                    onClick={() => setSelectedChatClientId(c.clientId)}
+                    className={`w-full text-left p-3 rounded-xl transition-all border ${
+                      selectedChatClientId === c.clientId
+                        ? 'bg-white border-slate-300 shadow-xs'
+                        : 'border-transparent hover:bg-white/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <strong className="text-xs text-slate-900 font-bold">{c.name}</strong>
+                      <span className="text-[10px] text-slate-400">{c.timestamp}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 truncate mt-0.5">
+                      {c.lastMessage}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Colonne Droite : Fil de discussion et Réponse */}
+            <div className="md:col-span-2 flex flex-col justify-between p-5 space-y-4">
+              <div className="space-y-3 overflow-y-auto max-h-[380px] pr-2">
+                {chatMessages
+                  .filter((m) => (m.clientId || 'user-karl') === selectedChatClientId)
+                  .map((m) => {
+                    const isAdmin = m.sender === 'admin';
+                    return (
+                      <div
+                        key={m.id}
+                        className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}
+                      >
+                        <span className="text-[10px] text-slate-400 mb-0.5 px-1 font-semibold">
+                          {m.senderName} · {m.timestamp}
+                        </span>
+                        <div
+                          className={`max-w-[80%] p-3 rounded-2xl text-xs font-medium leading-relaxed ${
+                            isAdmin
+                              ? 'bg-slate-900 text-white rounded-tr-none'
+                              : 'bg-slate-100 text-slate-900 rounded-tl-none border border-slate-200'
+                          }`}
+                        >
+                          {m.text}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              <form onSubmit={handleSendReply} className="flex gap-2 pt-3 border-t border-slate-200">
+                <input
+                  type="text"
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder="Écrire une réponse bienveillante au client..."
+                  className="flex-1 px-4 py-2.5 bg-slate-50 border-2 border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+                >
+                  <Send className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Envoyer</span>
+                </button>
+              </form>
+            </div>
+
+          </div>
+        )}
+
+      </main>
+
+      {/* Modal Ajout Livreur */}
+      {isAgentModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white border-2 border-slate-300 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="text-sm font-bold text-slate-900">Nouveau Livreur Partenaire</h3>
+              <button
+                type="button"
+                onClick={() => setIsAgentModalOpen(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-900"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveProductForm} className="space-y-3.5 text-xs">
+            <form onSubmit={handleCreateAgent} className="space-y-3 text-xs">
               <div>
-                <label className="text-[10px] uppercase font-semibold text-[#8C7A68] block mb-1">
-                  Nom de l'article
-                </label>
+                <label className="font-bold text-slate-700 block mb-1">Nom complet</label>
                 <input
                   type="text"
+                  value={agentName}
+                  onChange={(e) => setAgentName(e.target.value)}
+                  placeholder="ex: Mathieu Agossa"
                   required
-                  value={editingProduct.name || ''}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
-                  placeholder="Ex: Montre Automatique Squelette OrA"
-                  className="w-full px-3 py-2 bg-white border border-[#D9CDBF] rounded-xl"
+                  className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-300 rounded-xl font-medium focus:outline-none focus:border-slate-900"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] uppercase font-semibold text-[#8C7A68] block mb-1">
-                    Catégorie
-                  </label>
-                  <select
-                    value={editingProduct.categorySlug || 'montres'}
-                    onChange={(e) =>
-                      setEditingProduct({
-                        ...editingProduct,
-                        categorySlug: e.target.value,
-                        category: e.target.value === 'parfums' ? 'Haute Parfumerie' : 'Montres & Horlogerie'
-                      })
-                    }
-                    className="w-full px-3 py-2 bg-white border border-[#D9CDBF] rounded-xl font-medium"
-                  >
-                    <option value="montres">Montres & Horlogerie</option>
-                    <option value="parfums">Haute Parfumerie</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase font-semibold text-[#8C7A68] block mb-1">
-                    Prix (€)
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    value={editingProduct.price || ''}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, price: Number(e.target.value) })}
-                    className="w-full px-3 py-2 bg-white border border-[#D9CDBF] rounded-xl font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* Photo Upload: Local device file import */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase font-semibold text-[#8C7A68] block">
-                  Photo de l'article (Depuis votre appareil ou URL)
-                </label>
-                
-                <div className="flex items-center gap-3">
-                  {editingProduct.image && (
-                    <img
-                      src={editingProduct.image}
-                      alt="Preview"
-                      className="w-16 h-16 rounded-xl object-cover border border-[#D9CDBF] shrink-0"
-                    />
-                  )}
-
-                  <div className="space-y-2 flex-1">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      ref={fileInputRef}
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="py-1.5 px-3 bg-white hover:bg-[#F3ECE1] border border-[#D9CDBF] rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs"
-                    >
-                      <Upload className="w-3.5 h-3.5 text-[#8C7A68]" />
-                      <span>Importer une photo depuis l'appareil</span>
-                    </button>
-
-                    <input
-                      type="text"
-                      placeholder="Ou saisissez un lien / chemin d'image..."
-                      value={editingProduct.image || ''}
-                      onChange={(e) => setEditingProduct({ ...editingProduct, image: e.target.value })}
-                      className="w-full px-2.5 py-1.5 bg-white border border-[#D9CDBF] rounded-lg font-mono text-[10px]"
-                    />
-                  </div>
-                </div>
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-semibold text-[#8C7A68] block mb-1">
-                  Description courte
-                </label>
-                <textarea
-                  rows={2}
-                  value={editingProduct.description || ''}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, description: e.target.value })}
-                  className="w-full px-3 py-2 bg-white border border-[#D9CDBF] rounded-xl"
+                <label className="font-bold text-slate-700 block mb-1">Numéro de téléphone</label>
+                <input
+                  type="tel"
+                  value={agentPhone}
+                  onChange={(e) => setAgentPhone(e.target.value)}
+                  placeholder="ex: +229 01 97 00 12 34"
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-300 rounded-xl font-medium focus:outline-none focus:border-slate-900"
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-4 pt-1">
-                <label className="flex items-center gap-1.5 text-xs text-[#44403C] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingProduct.isFeaturedInHero || false}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, isFeaturedInHero: e.target.checked })}
-                    className="rounded accent-[#1C1917]"
-                  />
-                  <span className="font-semibold text-[#1C1917]">★ Afficher en Bannière défilante</span>
-                </label>
-
-                <label className="flex items-center gap-1.5 text-xs text-[#44403C] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingProduct.isPromo || false}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, isPromo: e.target.checked })}
-                    className="rounded accent-[#1C1917]"
-                  />
-                  <span>Article en promotion</span>
-                </label>
-
-                <label className="flex items-center gap-1.5 text-xs text-[#44403C] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingProduct.inStock !== false}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, inStock: e.target.checked })}
-                    className="rounded accent-[#1C1917]"
-                  />
-                  <span>En stock</span>
-                </label>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Zone habituelle</label>
+                <input
+                  type="text"
+                  value={agentZone}
+                  onChange={(e) => setAgentZone(e.target.value)}
+                  placeholder="ex: Cotonou (Haie Vive, Cadjèhoun)"
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-300 rounded-xl font-medium focus:outline-none focus:border-slate-900"
+                />
               </div>
 
-              <div className="flex gap-2.5 pt-3">
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 bg-[#1C1917] text-[#FAF7F2] rounded-full text-xs font-semibold uppercase tracking-wider shadow-xs hover:bg-[#2A2623]"
-                >
-                  Enregistrer l'article
-                </button>
+              <div className="pt-2 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsEditingProduct(false)}
-                  className="py-2.5 px-5 border border-[#D9CDBF] rounded-full text-xs text-[#78716C] hover:bg-[#F3ECE1]"
+                  onClick={() => setIsAgentModalOpen(false)}
+                  className="px-4 py-2 text-slate-600 hover:text-slate-900 font-bold"
                 >
                   Annuler
                 </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-slate-900 text-white rounded-xl font-bold hover:bg-black transition-colors"
+                >
+                  Enregistrer
+                </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Produit */}
+      {isProductModalOpen && editingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white border-2 border-slate-300 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="text-sm font-bold text-slate-900">
+                {products.some((p) => p.id === editingProduct.id) ? 'Modifier l’Article' : 'Ajouter un Article'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsProductModalOpen(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-900"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProduct} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Nom du produit</label>
+                <input
+                  type="text"
+                  value={editingProduct.name}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-300 rounded-xl font-medium focus:outline-none focus:border-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Prix en Francs CFA (XOF)</label>
+                <input
+                  type="number"
+                  value={editingProduct.price}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, price: Number(e.target.value) })}
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-300 rounded-xl font-medium focus:outline-none focus:border-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">URL de l'image</label>
+                <input
+                  type="url"
+                  value={editingProduct.image}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, image: e.target.value })}
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-300 rounded-xl font-medium focus:outline-none focus:border-slate-900"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsProductModalOpen(false)}
+                  className="px-4 py-2 text-slate-600 hover:text-slate-900 font-bold"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-slate-900 text-white rounded-xl font-bold hover:bg-black transition-colors"
+                >
+                  Enregistrer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Fiche Détails du Livreur (Affichée au toucher/clic sans identifiant de connexion) */}
+      {selectedAgentDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white border-2 border-slate-300 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center">
+                  <Truck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Fiche du Livreur Partenaire
+                  </h3>
+                  <span className="text-[11px] text-slate-500">
+                    Informations opérationnelles en temps réel
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedAgentDetails(null)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                title="Fermer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Profile Header */}
+            <div className="flex items-center justify-between gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <div className="flex items-center gap-3.5">
+                <div className="w-13 h-13 rounded-2xl bg-slate-900 text-amber-400 font-bold text-xl flex items-center justify-center shadow-xs">
+                  {selectedAgentDetails.name.charAt(0)}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-base font-bold text-slate-900">
+                      {selectedAgentDetails.name}
+                    </h4>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-950 border border-emerald-300">
+                      Disponible
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 font-medium mt-0.5">
+                    {selectedAgentDetails.phone}
+                  </p>
+                </div>
+              </div>
+
+              {selectedAgentDetails.phone && (
+                <a
+                  href={`tel:${selectedAgentDetails.phone}`}
+                  className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
+                >
+                  <Phone className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Appeler</span>
+                </a>
+              )}
+            </div>
+
+            {/* Statistics and Badges */}
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Courses</span>
+                <span className="text-base font-bold text-slate-900 font-serif-luxury">
+                  {selectedAgentDetails.completedDeliveries}
+                </span>
+                <span className="text-[10px] text-slate-500 block">finalisées</span>
+              </div>
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Note avis</span>
+                <span className="text-base font-bold text-amber-600 font-serif-luxury">
+                  ★ {selectedAgentDetails.rating || '5.0'}
+                </span>
+                <span className="text-[10px] text-slate-500 block">sur 5.0</span>
+              </div>
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Ponctualité</span>
+                <span className="text-base font-bold text-emerald-700 font-serif-luxury">
+                  100%
+                </span>
+                <span className="text-[10px] text-slate-500 block">garantie</span>
+              </div>
+            </div>
+
+            {/* Operational Details */}
+            <div className="space-y-2 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-2.5">
+                <MapPin className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Zone d'intervention habituelle</span>
+                  <p className="font-semibold text-slate-800">{selectedAgentDetails.zone}</p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-2.5">
+                <Truck className="w-4 h-4 text-slate-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Moyen de locomotion</span>
+                  <p className="font-semibold text-slate-800">{selectedAgentDetails.vehicle || 'Moto Express Sécurisée'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Current Active Deliveries */}
+            <div className="space-y-2 pt-2 border-t border-slate-200">
+              <span className="text-xs font-bold text-slate-900 block">
+                Courses en cours confiées à ce livreur :
+              </span>
+              {(() => {
+                const activeForAgent = orders.filter(
+                  (o) => o.assignedDeliveryAgentId === selectedAgentDetails.id && o.status !== 'Livrée' && o.status !== 'Remboursée'
+                );
+
+                if (activeForAgent.length === 0) {
+                  return (
+                    <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs text-emerald-950 font-medium">
+                      ✓ Aucune course en cours. Ce coursier est immédiatement disponible pour prendre en charge une nouvelle livraison.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-2 max-h-36 overflow-y-auto">
+                    {activeForAgent.map((ord) => (
+                      <div
+                        key={ord.id}
+                        className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-3"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900">{ord.buyerName || 'Client VIP'}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                              {ord.status}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 truncate max-w-[240px]">
+                            {ord.shippingAddress}
+                          </p>
+                        </div>
+                        <span className="font-mono font-bold text-slate-900 shrink-0">
+                          {formatFCFA(ord.total)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedAgentDetails(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl transition-colors shadow-xs"
+              >
+                Fermer la fiche
+              </button>
+            </div>
+
           </div>
         </div>
       )}

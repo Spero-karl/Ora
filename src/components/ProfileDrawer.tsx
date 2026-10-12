@@ -1,3 +1,8 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import React, { useState } from 'react';
 import {
   X,
@@ -6,12 +11,29 @@ import {
   Check,
   Edit2,
   Save,
-  CreditCard,
   Trash2,
   Smartphone,
-  Wallet
+  Wallet,
+  AlertCircle,
+  Info,
+  ShieldCheck,
+  KeyRound,
+  Truck,
+  Phone,
+  MapPin,
+  Clock
 } from 'lucide-react';
-import { UserProfile, Order, SavedCard, SavedMobileMoney } from '../types';
+import { UserProfile, Order, SavedMobileMoney } from '../types';
+import { formatFCFA } from '../utils/formatCurrency';
+import {
+  BENIN_OPERATORS,
+  BeninOperator,
+  formatBeninNational,
+  formatBeninInternational,
+  isValidBeninPhone,
+  sanitizeBeninDigits,
+  detectBeninOperator
+} from '../utils/beninPhone';
 
 interface ProfileDrawerProps {
   isOpen: boolean;
@@ -29,30 +51,22 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
   orders
 }) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'payments' | 'orders'>('profile');
-  const [paymentSubTab, setPaymentSubTab] = useState<'momo' | 'card'>('momo');
   
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [isEditingCard, setIsEditingCard] = useState(false);
   const [isEditingMM, setIsEditingMM] = useState(false);
   
   const [formData, setFormData] = useState<UserProfile>(userProfile);
   const [savedSuccess, setSavedSuccess] = useState<string | null>(null);
 
-  // Card form state
-  const [cardData, setCardData] = useState<SavedCard>({
-    cardNumber: userProfile.savedCard?.cardNumber || '4532 8920 1192 8842',
-    cardHolder: userProfile.savedCard?.cardHolder || userProfile.name || 'Karl',
-    cardExp: userProfile.savedCard?.cardExp || '11/29',
-    cardBrand: userProfile.savedCard?.cardBrand || 'OrA Card',
-    last4: userProfile.savedCard?.last4 || '8842'
-  });
+  // Mobile Money Bénin form state
+  const initialMMPhone = userProfile.savedMobileMoney?.phoneNumber
+    ? formatBeninNational(userProfile.savedMobileMoney.phoneNumber)
+    : '01 97 00 12 34';
 
-  // Mobile Money form state
-  const [mmData, setMmData] = useState<SavedMobileMoney>({
-    operator: userProfile.savedMobileMoney?.operator || 'MTN',
-    phoneNumber: userProfile.savedMobileMoney?.phoneNumber || '+229 97 00 12 34',
-    accountName: userProfile.name || 'Karl'
-  });
+  const [mmOperator, setMmOperator] = useState<BeninOperator>(
+    userProfile.savedMobileMoney?.operator || 'MTN'
+  );
+  const [mmPhoneNumber, setMmPhoneNumber] = useState(initialMMPhone);
 
   if (!isOpen) return null;
 
@@ -64,46 +78,37 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
     setTimeout(() => setSavedSuccess(null), 2000);
   };
 
-  const handleSaveCard = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanNumber = cardData.cardNumber.replace(/\s+/g, '');
-    const last4 = cleanNumber.slice(-4) || '8842';
-    const formattedCard: SavedCard = {
-      ...cardData,
-      cardNumber: cleanNumber.length >= 16 ? cleanNumber : `•••• •••• •••• ${last4}`,
-      last4: last4,
-      cardBrand: 'OrA Card'
-    };
+  const handlePhoneInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    const formatted = formatBeninNational(val);
+    setMmPhoneNumber(formatted);
 
-    const updated = {
-      ...userProfile,
-      savedCard: formattedCard
-    };
-    onUpdateProfile(updated);
-    setIsEditingCard(false);
-    setSavedSuccess('Carte bancaire enregistrée.');
-    setTimeout(() => setSavedSuccess(null), 2200);
+    const detected = detectBeninOperator(val);
+    if (detected && detected !== mmOperator) {
+      setMmOperator(detected);
+    }
   };
 
-  const handleRemoveCard = () => {
-    const updated = {
-      ...userProfile,
-      savedCard: null
-    };
-    onUpdateProfile(updated);
-    setSavedSuccess('Carte bancaire supprimée.');
-    setTimeout(() => setSavedSuccess(null), 2000);
-  };
+  const isMMPhoneValid = isValidBeninPhone(mmPhoneNumber);
 
   const handleSaveMM = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isMMPhoneValid) return;
+
+    const formattedNational = formatBeninNational(mmPhoneNumber);
+    const updatedMM: SavedMobileMoney = {
+      operator: mmOperator,
+      phoneNumber: formattedNational,
+      accountName: userProfile.name || 'Client OrA'
+    };
+
     const updated = {
       ...userProfile,
-      savedMobileMoney: mmData
+      savedMobileMoney: updatedMM
     };
     onUpdateProfile(updated);
     setIsEditingMM(false);
-    setSavedSuccess(`Numéro ${mmData.operator} MoMo enregistré.`);
+    setSavedSuccess(`Compte ${BENIN_OPERATORS[mmOperator].name} enregistré.`);
     setTimeout(() => setSavedSuccess(null), 2200);
   };
 
@@ -113,9 +118,12 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
       savedMobileMoney: null
     };
     onUpdateProfile(updated);
-    setSavedSuccess('Numéro MoMo supprimé.');
+    setSavedSuccess('Moyen de paiement MoMo supprimé.');
     setTimeout(() => setSavedSuccess(null), 2000);
   };
+
+  const activeOpInfo = BENIN_OPERATORS[mmOperator];
+  const digitsCount = sanitizeBeninDigits(mmPhoneNumber).length;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
@@ -136,10 +144,10 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
               </div>
               <div>
                 <h3 className="font-serif-luxury text-base font-medium text-[#1C1917]">
-                  {userProfile.name || 'Karl'}
+                  {userProfile.name || 'Invité'}
                 </h3>
                 <span className="text-[9px] uppercase tracking-wider text-[#9A8977]">
-                  Mon compte
+                  {userProfile.role === 'guest' ? 'Session Invité' : 'Client OrA'}
                 </span>
               </div>
             </div>
@@ -148,77 +156,76 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
               onClick={onClose}
               type="button"
               className="p-1.5 text-[#8C7A68] hover:bg-[#F3ECE1] rounded-full transition-colors"
-              aria-label="Fermer"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5 stroke-1" />
             </button>
           </div>
 
-          {/* Tab Selector: Profil | Moyens de paiement | Commandes */}
-          <div className="px-4 pt-2 border-b border-[#ECE3D5] bg-[#FCFAF7]">
-            <div className="flex space-x-4 text-xs font-semibold whitespace-nowrap">
-              <button
-                type="button"
-                onClick={() => setActiveTab('profile')}
-                className={`pb-2.5 border-b-2 transition-colors flex items-center gap-1.5 text-xs ${
-                  activeTab === 'profile'
-                    ? 'border-[#1C1917] text-[#1C1917]'
-                    : 'border-transparent text-[#8C7A68] hover:text-[#1C1917]'
-                }`}
-              >
-                <User className="w-3.5 h-3.5" />
-                <span>Profil</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('payments')}
-                className={`pb-2.5 border-b-2 transition-colors flex items-center gap-1.5 text-xs ${
-                  activeTab === 'payments'
-                    ? 'border-[#1C1917] text-[#1C1917]'
-                    : 'border-transparent text-[#8C7A68] hover:text-[#1C1917]'
-                }`}
-              >
-                <Wallet className="w-3.5 h-3.5" />
-                <span>Moyens de paiement</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('orders')}
-                className={`pb-2.5 border-b-2 transition-colors flex items-center gap-1.5 text-xs ${
-                  activeTab === 'orders'
-                    ? 'border-[#1C1917] text-[#1C1917]'
-                    : 'border-transparent text-[#8C7A68] hover:text-[#1C1917]'
-                }`}
-              >
-                <Package className="w-3.5 h-3.5" />
-                <span>Commandes ({orders.length})</span>
-              </button>
+          {/* Feedback banner */}
+          {savedSuccess && (
+            <div className="bg-[#1C1917] text-[#FAF7F2] text-xs py-2 px-4 flex items-center gap-2 border-b border-[#3E3832]">
+              <Check className="w-3.5 h-3.5 text-[#E6C694]" />
+              <span>{savedSuccess}</span>
             </div>
+          )}
+
+          {/* Navigation Tabs */}
+          <div className="flex border-b border-[#ECE3D5] bg-[#F7F2EB] text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveTab('profile')}
+              className={`flex-1 py-2.5 px-3 flex items-center justify-center gap-1.5 font-medium transition-colors border-b-2 ${
+                activeTab === 'profile'
+                  ? 'border-[#1C1917] text-[#1C1917] bg-[#FCFAF7]'
+                  : 'border-transparent text-[#78716C] hover:text-[#1C1917]'
+              }`}
+            >
+              <User className="w-3.5 h-3.5" />
+              <span>Profil</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('payments')}
+              className={`flex-1 py-2.5 px-3 flex items-center justify-center gap-1.5 font-medium transition-colors border-b-2 ${
+                activeTab === 'payments'
+                  ? 'border-[#1C1917] text-[#1C1917] bg-[#FCFAF7]'
+                  : 'border-transparent text-[#78716C] hover:text-[#1C1917]'
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5 text-[#C1931E]" />
+              <span>Mobile Money (Bénin)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('orders')}
+              className={`flex-1 py-2.5 px-3 flex items-center justify-center gap-1.5 font-medium transition-colors border-b-2 ${
+                activeTab === 'orders'
+                  ? 'border-[#1C1917] text-[#1C1917] bg-[#FCFAF7]'
+                  : 'border-transparent text-[#78716C] hover:text-[#1C1917]'
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" />
+              <span>Commandes ({orders.length})</span>
+            </button>
           </div>
 
-          {/* Drawer Body */}
+          {/* Tab Contents */}
           <div className="p-4 sm:p-5 flex-1 space-y-4">
-            {savedSuccess && (
-              <div className="p-2.5 bg-[#F4ECE1] border border-[#E3D7C7] text-[#2E2823] text-xs rounded-xl flex items-center gap-2">
-                <Check className="w-3.5 h-3.5 text-[#8C7A68]" />
-                <span>{savedSuccess}</span>
-              </div>
-            )}
-
-            {/* TAB 1: Profile & Shipping Details */}
+            
+            {/* TAB 1: PROFIL & COORDONNÉES */}
             {activeTab === 'profile' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] uppercase font-semibold text-[#8C7A68] tracking-wider">
-                    Coordonnées
+                    Informations personnelles
                   </span>
                   {!isEditingProfile ? (
                     <button
                       type="button"
                       onClick={() => setIsEditingProfile(true)}
-                      className="inline-flex items-center gap-1 text-xs text-[#1C1917] hover:underline"
+                      className="text-xs text-[#1C1917] hover:underline flex items-center gap-1"
                     >
                       <Edit2 className="w-3 h-3" />
                       <span>Modifier</span>
@@ -226,11 +233,8 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
                   ) : (
                     <button
                       type="button"
-                      onClick={() => {
-                        setIsEditingProfile(false);
-                        setFormData(userProfile);
-                      }}
-                      className="text-xs text-[#8C7A68]"
+                      onClick={() => setIsEditingProfile(false)}
+                      className="text-xs text-[#8C7A68] hover:underline"
                     >
                       Annuler
                     </button>
@@ -238,377 +242,280 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
                 </div>
 
                 {!isEditingProfile ? (
-                  <div className="bg-[#FCFAF7] border border-[#ECE3D5] rounded-2xl p-4 space-y-2.5 text-xs">
+                  <div className="bg-[#FCFAF7] border border-[#ECE3D5] rounded-2xl p-4 space-y-3 text-xs">
                     <div>
-                      <span className="text-[9px] text-[#9A8977] uppercase block">Nom</span>
-                      <p className="font-semibold text-[#1C1917]">{userProfile.name}</p>
+                      <span className="text-[10px] text-[#9A8977] uppercase block">Nom complet</span>
+                      <p className="font-medium text-[#1C1917]">{userProfile.name || 'Invité'}</p>
                     </div>
+
                     <div>
-                      <span className="text-[9px] text-[#9A8977] uppercase block">Email</span>
-                      <p className="text-[#1C1917]">{userProfile.email}</p>
+                      <span className="text-[10px] text-[#9A8977] uppercase block">Adresse email</span>
+                      <p className="font-medium text-[#1C1917]">{userProfile.email || 'Non renseigné'}</p>
                     </div>
+
                     <div>
-                      <span className="text-[9px] text-[#9A8977] uppercase block">Téléphone</span>
-                      <p className="text-[#1C1917]">{userProfile.phone}</p>
+                      <span className="text-[10px] text-[#9A8977] uppercase block">Numéro de contact</span>
+                      <p className="font-mono font-medium text-[#1C1917]">{userProfile.phone || 'Non renseigné'}</p>
                     </div>
+
                     <div>
-                      <span className="text-[9px] text-[#9A8977] uppercase block">Adresse de livraison</span>
-                      <p className="text-[#1C1917]">{userProfile.address}, {userProfile.postalCode} {userProfile.city}</p>
+                      <span className="text-[10px] text-[#9A8977] uppercase block">Adresse de livraison</span>
+                      <p className="font-medium text-[#1C1917]">
+                        {userProfile.address ? `${userProfile.address}, ${userProfile.city} (Bénin)` : 'Non renseignée'}
+                      </p>
                     </div>
                   </div>
                 ) : (
-                  <form onSubmit={handleSaveProfile} className="space-y-2 text-xs">
-                    <input
-                      type="text"
-                      required
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="Nom complet"
-                      className="w-full px-3 py-1.5 bg-white border border-[#D9CDBF] rounded-lg"
-                    />
-                    <input
-                      type="email"
-                      required
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="Email"
-                      className="w-full px-3 py-1.5 bg-white border border-[#D9CDBF] rounded-lg"
-                    />
-                    <input
-                      type="tel"
-                      required
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      placeholder="Téléphone"
-                      className="w-full px-3 py-1.5 bg-white border border-[#D9CDBF] rounded-lg"
-                    />
-                    <input
-                      type="text"
-                      required
-                      value={formData.address}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      placeholder="Adresse"
-                      className="w-full px-3 py-1.5 bg-white border border-[#D9CDBF] rounded-lg"
-                    />
-                    <div className="grid grid-cols-2 gap-2">
+                  <form onSubmit={handleSaveProfile} className="space-y-3 bg-[#FCFAF7] border border-[#ECE3D5] rounded-2xl p-4 text-xs">
+                    <div>
+                      <label className="text-[10px] font-medium text-[#78716C] block mb-1">Nom complet</label>
                       <input
                         type="text"
-                        required
-                        value={formData.postalCode}
-                        onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
-                        placeholder="Code postal"
-                        className="w-full px-3 py-1.5 bg-white border border-[#D9CDBF] rounded-lg"
-                      />
-                      <input
-                        type="text"
-                        required
-                        value={formData.city}
-                        onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                        placeholder="Ville"
-                        className="w-full px-3 py-1.5 bg-white border border-[#D9CDBF] rounded-lg"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        className="w-full px-2.5 py-1.5 bg-white border border-[#D9CDBF] rounded-lg text-xs"
                       />
                     </div>
+
+                    <div>
+                      <label className="text-[10px] font-medium text-[#78716C] block mb-1">Adresse email</label>
+                      <input
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        className="w-full px-2.5 py-1.5 bg-white border border-[#D9CDBF] rounded-lg text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-medium text-[#78716C] block mb-1">Téléphone de contact</label>
+                      <input
+                        type="tel"
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        placeholder="+229 01 97 00 12 34"
+                        className="w-full px-2.5 py-1.5 bg-white border border-[#D9CDBF] rounded-lg font-mono text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-medium text-[#78716C] block mb-1">Adresse / Quartier</label>
+                      <input
+                        type="text"
+                        value={formData.address}
+                        onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                        placeholder="Quartier Haie Vive, Rue 340"
+                        className="w-full px-2.5 py-1.5 bg-white border border-[#D9CDBF] rounded-lg text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-medium text-[#78716C] block mb-1">Ville</label>
+                      <input
+                        type="text"
+                        value={formData.city}
+                        onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                        placeholder="Cotonou"
+                        className="w-full px-2.5 py-1.5 bg-white border border-[#D9CDBF] rounded-lg text-xs"
+                      />
+                    </div>
+
                     <button
                       type="submit"
-                      className="w-full mt-2 py-2 px-3 bg-[#1C1917] text-[#FAF7F2] rounded-full text-xs font-medium"
+                      className="w-full py-2 bg-[#1C1917] text-[#FAF7F2] rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 mt-2"
                     >
-                      Enregistrer
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Enregistrer les modifications</span>
                     </button>
                   </form>
                 )}
               </div>
             )}
 
-            {/* TAB 2: UNIFIED MOYENS DE PAIEMENT (MOMO & CARTE) */}
+            {/* TAB 2: EXCLUSIVEMENT MOBILE MONEY BÉNIN (MTN, MOOV, CELTIIS) */}
             {activeTab === 'payments' && (
               <div className="space-y-4">
                 <div>
-                  <span className="text-[10px] uppercase font-semibold text-[#8C7A68] tracking-wider block mb-1">
-                    Enregistrement des moyens de paiement
-                  </span>
-                  <p className="text-xs text-[#78716C]">
-                    Configurez votre numéro MoMo (MTN, Moov, Celtiis) ou votre carte bancaire pour régler vos achats.
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base">🇧🇯</span>
+                    <span className="text-[10px] uppercase font-semibold text-[#8C7A68] tracking-wider">
+                      Compte Mobile Money (FedaPay Bénin)
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#78716C] mt-0.5">
+                    Enregistrez votre compte <strong>MTN MoMo</strong>, <strong>Moov Money</strong> ou <strong>Celtiis Cash</strong> pour vos achats.
                   </p>
                 </div>
 
-                {/* Sub-selector: MoMo ou Carte */}
-                <div className="flex bg-[#F2EDE4] p-1 rounded-xl gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentSubTab('momo')}
-                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
-                      paymentSubTab === 'momo'
-                        ? 'bg-[#1C1917] text-[#FAF7F2] shadow-xs'
-                        : 'text-[#57534E] hover:text-[#1C1917]'
-                    }`}
-                  >
-                    <Smartphone className="w-3.5 h-3.5 text-[#E6C694]" />
-                    <span>MoMo (MTN / Moov / Celtiis)</span>
-                  </button>
+                {!isEditingMM ? (
+                  <div>
+                    {userProfile.savedMobileMoney ? (
+                      <div className="bg-[#FCFAF7] border border-[#ECE3D5] rounded-2xl p-4 space-y-3 text-xs shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                            userProfile.savedMobileMoney.operator === 'MTN'
+                              ? 'bg-[#FFCC00] text-black border border-[#E6B800]'
+                              : userProfile.savedMobileMoney.operator === 'Moov'
+                              ? 'bg-[#0055A5] text-white border border-[#004488]'
+                              : 'bg-[#008080] text-white border border-[#006666]'
+                          }`}>
+                            {userProfile.savedMobileMoney.operator === 'MTN'
+                              ? 'MTN MoMo Bénin'
+                              : userProfile.savedMobileMoney.operator === 'Moov'
+                              ? 'Moov Money Bénin'
+                              : 'Celtiis Cash Bénin'}
+                          </span>
 
-                  <button
-                    type="button"
-                    onClick={() => setPaymentSubTab('card')}
-                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
-                      paymentSubTab === 'card'
-                        ? 'bg-[#1C1917] text-[#FAF7F2] shadow-xs'
-                        : 'text-[#57534E] hover:text-[#1C1917]'
-                    }`}
-                  >
-                    <CreditCard className="w-3.5 h-3.5" />
-                    <span>Carte bancaire</span>
-                  </button>
-                </div>
-
-                {/* 1. SECTION MOMO */}
-                {paymentSubTab === 'momo' && (
-                  <div className="space-y-3">
-                    {!isEditingMM ? (
-                      <div>
-                        {userProfile.savedMobileMoney ? (
-                          <div className="bg-[#FCFAF7] border border-[#ECE3D5] rounded-2xl p-4 space-y-2.5 text-xs">
-                            <div className="flex items-center justify-between">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold text-white ${
-                                userProfile.savedMobileMoney.operator === 'MTN'
-                                  ? 'bg-[#E6B800] text-black'
-                                  : userProfile.savedMobileMoney.operator === 'Moov'
-                                  ? 'bg-[#0055A5]'
-                                  : 'bg-[#008080]'
-                              }`}>
-                                {userProfile.savedMobileMoney.operator === 'MTN'
-                                  ? 'MTN MoMo'
-                                  : userProfile.savedMobileMoney.operator === 'Moov'
-                                  ? 'Moov Money'
-                                  : 'Celtiis Cash'}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setIsEditingMM(true)}
-                                  className="text-xs text-[#1C1917] hover:underline flex items-center gap-1"
-                                >
-                                  <Edit2 className="w-3 h-3" />
-                                  <span>Modifier</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={handleRemoveMM}
-                                  className="text-xs text-red-700 hover:underline flex items-center gap-1"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                  <span>Supprimer</span>
-                                </button>
-                              </div>
-                            </div>
-
-                            <div>
-                              <span className="text-[9px] text-[#9A8977] uppercase block">Numéro enregistré</span>
-                              <p className="font-mono font-bold text-[#1C1917] text-sm">
-                                {userProfile.savedMobileMoney.phoneNumber}
-                              </p>
-                            </div>
-                            <p className="text-[10px] text-[#78716C]">
-                              Ce numéro est pré-rempli automatiquement lors de vos paiements sur le site.
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="bg-[#F7F2EB] border border-[#EAE1D3] rounded-2xl p-5 text-center space-y-2 text-xs">
-                            <Smartphone className="w-6 h-6 text-[#8C7A68] mx-auto" />
-                            <p className="font-semibold text-[#1C1917]">Aucun numéro MoMo enregistré</p>
-                            <p className="text-[11px] text-[#78716C]">
-                              Enregistrez votre numéro MTN, Moov ou Celtiis pour payer en 1 clic.
-                            </p>
+                          <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => setIsEditingMM(true)}
-                              className="mt-1 px-4 py-1.5 bg-[#1C1917] text-[#FAF7F2] rounded-full text-xs font-semibold"
+                              onClick={() => {
+                                setMmOperator(userProfile.savedMobileMoney!.operator);
+                                setMmPhoneNumber(formatBeninNational(userProfile.savedMobileMoney!.phoneNumber));
+                                setIsEditingMM(true);
+                              }}
+                              className="text-xs text-[#1C1917] hover:underline flex items-center gap-1"
                             >
-                              Enregistrer un numéro MoMo
+                              <Edit2 className="w-3 h-3" />
+                              <span>Modifier</span>
                             </button>
+                            <button
+                              type="button"
+                              onClick={handleRemoveMM}
+                              className="text-xs text-red-700 hover:underline flex items-center gap-1"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Supprimer</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="bg-[#F7F2EB] p-3 rounded-xl space-y-1">
+                          <span className="text-[9px] text-[#9A8977] uppercase block font-semibold">Numéro MoMo enregistré</span>
+                          <p className="font-mono font-bold text-[#1C1917] text-base tracking-wider">
+                            {userProfile.savedMobileMoney.phoneNumber}
+                          </p>
+                          <p className="text-[10px] text-[#78716C] font-mono">
+                            {formatBeninInternational(userProfile.savedMobileMoney.phoneNumber)}
+                          </p>
+                        </div>
+
+                        <p className="text-[10px] text-[#78716C]">
+                          Ce numéro est pré-rempli automatiquement lors de tous vos règlements sur la boutique.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-[#F7F2EB] border border-[#EAE1D3] rounded-2xl p-5 text-center space-y-2.5 text-xs">
+                        <Smartphone className="w-8 h-8 text-[#8C7A68] mx-auto stroke-1" />
+                        <p className="font-semibold text-[#1C1917]">Aucun numéro MoMo enregistré</p>
+                        <p className="text-[11px] text-[#78716C] max-w-xs mx-auto">
+                          Enregistrez votre compte MTN Bénin, Moov Bénin ou Celtiis Bénin pour valider vos achats en un clic.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingMM(true)}
+                          className="mt-1 px-4 py-2 bg-[#1C1917] text-[#FAF7F2] rounded-full text-xs font-semibold shadow-2xs hover:bg-[#2A2623]"
+                        >
+                          Enregistrer un numéro Mobile Money
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <form onSubmit={handleSaveMM} className="space-y-3.5 bg-[#FCFAF7] border border-[#ECE3D5] rounded-2xl p-4 text-xs">
+                    <div className="flex justify-between items-center pb-1 border-b border-[#ECE3D5]">
+                      <span className="font-semibold text-xs text-[#1C1917]">Configuration Mobile Money Bénin</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingMM(false)}
+                        className="text-xs text-[#8C7A68] hover:underline"
+                      >
+                        Annuler
+                      </button>
+                    </div>
+
+                    {/* Operator choice */}
+                    <div>
+                      <label className="text-[10px] font-semibold text-[#78716C] uppercase block mb-1">
+                        Opérateur béninois
+                      </label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {(['MTN', 'Moov', 'Celtiis'] as const).map((op) => (
+                          <button
+                            key={op}
+                            type="button"
+                            onClick={() => setMmOperator(op)}
+                            className={`py-2 px-1 rounded-xl border text-center text-xs font-bold transition-all ${
+                              mmOperator === op
+                                ? op === 'MTN'
+                                  ? 'bg-[#FFCC00] text-black border-[#E6B800] ring-1 ring-[#FFCC00]'
+                                  : op === 'Moov'
+                                  ? 'bg-[#0055A5] text-white border-[#004488] ring-1 ring-[#0055A5]'
+                                  : 'bg-[#008080] text-white border-[#006666] ring-1 ring-[#008080]'
+                                : 'bg-white text-[#44403C] border-[#D9CDBF] hover:bg-[#F7F2EB]'
+                            }`}
+                          >
+                            <span className="block">{op === 'MTN' ? 'MTN' : op === 'Moov' ? 'Moov' : 'Celtiis'}</span>
+                            <span className="text-[9px] font-normal opacity-85 block">
+                              {op === 'MTN' ? 'MoMo' : op === 'Moov' ? 'Money' : 'Cash'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Number input */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[10px] font-semibold text-[#78716C] uppercase">
+                          Numéro {activeOpInfo.name}
+                        </label>
+                      </div>
+
+                      <div className={`flex items-center bg-white border rounded-xl overflow-hidden ${
+                        isMMPhoneValid
+                          ? 'border-green-600 ring-1 ring-green-600/30'
+                          : 'border-[#D9CDBF]'
+                      }`}>
+                        <div className="bg-[#F7F2EB] px-2.5 py-1.5 border-r border-[#E3D7C7] flex items-center gap-1 shrink-0 font-mono text-xs font-bold text-[#1C1917]">
+                          <span>🇧🇯</span>
+                          <span>+229</span>
+                        </div>
+                        <input
+                          type="tel"
+                          required
+                          value={mmPhoneNumber}
+                          onChange={handlePhoneInputChange}
+                          placeholder="01 97 00 12 34"
+                          className="w-full px-2.5 py-1.5 text-xs font-mono font-bold text-[#1C1917] focus:outline-none"
+                        />
+                        {isMMPhoneValid && (
+                          <div className="pr-2">
+                            <Check className="w-4 h-4 text-green-700" />
                           </div>
                         )}
                       </div>
-                    ) : (
-                      <form onSubmit={handleSaveMM} className="space-y-3 bg-[#FCFAF7] border border-[#ECE3D5] rounded-2xl p-4 text-xs">
-                        <div className="flex justify-between items-center">
-                          <span className="font-semibold text-xs text-[#1C1917]">Configuration MoMo</span>
-                          <button
-                            type="button"
-                            onClick={() => setIsEditingMM(false)}
-                            className="text-xs text-[#8C7A68]"
-                          >
-                            Annuler
-                          </button>
-                        </div>
+                    </div>
 
-                        <div>
-                          <label className="text-[10px] font-medium text-[#78716C] block mb-1">
-                            Opérateur
-                          </label>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {(['MTN', 'Moov', 'Celtiis'] as const).map((op) => (
-                              <button
-                                key={op}
-                                type="button"
-                                onClick={() => setMmData({ ...mmData, operator: op })}
-                                className={`py-1.5 px-2 rounded-lg border text-center text-xs font-bold ${
-                                  mmData.operator === op
-                                    ? op === 'MTN'
-                                      ? 'bg-[#FFCC00] text-black border-[#E6B800]'
-                                      : op === 'Moov'
-                                      ? 'bg-[#0055A5] text-white border-[#004488]'
-                                      : 'bg-[#008080] text-white border-[#006666]'
-                                    : 'bg-white text-[#44403C] border-[#D9CDBF]'
-                                }`}
-                              >
-                                {op === 'MTN' ? 'MTN MoMo' : op === 'Moov' ? 'Moov' : 'Celtiis'}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-medium text-[#78716C] block mb-1">
-                            Numéro de téléphone {mmData.operator}
-                          </label>
-                          <input
-                            type="tel"
-                            required
-                            value={mmData.phoneNumber}
-                            onChange={(e) => setMmData({ ...mmData, phoneNumber: e.target.value })}
-                            placeholder="+229 97 00 12 34"
-                            className="w-full px-3 py-1.5 bg-white border border-[#D9CDBF] rounded-lg font-mono text-xs"
-                          />
-                        </div>
-
-                        <button
-                          type="submit"
-                          className="w-full py-2 bg-[#1C1917] text-[#FAF7F2] rounded-full text-xs font-semibold"
-                        >
-                          Enregistrer mon numéro {mmData.operator}
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                )}
-
-                {/* 2. SECTION CARTE BANCAIRE */}
-                {paymentSubTab === 'card' && (
-                  <div className="space-y-3">
-                    {!isEditingCard ? (
-                      <div>
-                        {userProfile.savedCard ? (
-                          <div className="space-y-3">
-                            <div className="bg-[#1C1917] text-[#FAF7F2] rounded-2xl p-4 space-y-2.5 shadow-md border border-[#3E3832]">
-                              <div className="flex justify-between items-center text-xs">
-                                <span className="font-serif-luxury font-medium tracking-widest text-[#E6C694]">OrA Card</span>
-                                <span className="text-[10px] text-[#A89887]">•••• {userProfile.savedCard.last4}</span>
-                              </div>
-                              <p className="font-mono text-sm tracking-widest">
-                                •••• •••• •••• {userProfile.savedCard.last4}
-                              </p>
-                              <div className="flex justify-between text-[10px] text-[#A89887]">
-                                <span>{userProfile.savedCard.cardHolder}</span>
-                                <span>Exp : {userProfile.savedCard.cardExp}</span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center justify-between px-1 text-xs">
-                              <button
-                                type="button"
-                                onClick={() => setIsEditingCard(true)}
-                                className="text-[#1C1917] hover:underline flex items-center gap-1"
-                              >
-                                <Edit2 className="w-3 h-3" />
-                                <span>Modifier la carte</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={handleRemoveCard}
-                                className="text-red-700 hover:underline flex items-center gap-1"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                                <span>Supprimer</span>
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="bg-[#F7F2EB] border border-[#EAE1D3] rounded-2xl p-5 text-center space-y-2 text-xs">
-                            <CreditCard className="w-6 h-6 text-[#8C7A68] mx-auto" />
-                            <p className="font-semibold text-[#1C1917]">Aucune carte enregistrée</p>
-                            <p className="text-[11px] text-[#78716C]">
-                              Enregistrez votre carte bancaire pour vos prochains règlements.
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => setIsEditingCard(true)}
-                              className="mt-1 px-4 py-1.5 bg-[#1C1917] text-[#FAF7F2] rounded-full text-xs font-semibold"
-                            >
-                              Enregistrer une carte
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <form onSubmit={handleSaveCard} className="space-y-2.5 bg-[#FCFAF7] border border-[#ECE3D5] rounded-2xl p-4 text-xs">
-                        <div className="flex justify-between items-center">
-                          <span className="font-semibold text-xs text-[#1C1917]">Enregistrement carte bancaire</span>
-                          <button
-                            type="button"
-                            onClick={() => setIsEditingCard(false)}
-                            className="text-xs text-[#8C7A68]"
-                          >
-                            Annuler
-                          </button>
-                        </div>
-
-                        <input
-                          type="text"
-                          required
-                          value={cardData.cardHolder}
-                          onChange={(e) => setCardData({ ...cardData, cardHolder: e.target.value })}
-                          placeholder="Nom sur la carte"
-                          className="w-full px-3 py-1.5 bg-white border border-[#D9CDBF] rounded-lg"
-                        />
-                        <input
-                          type="text"
-                          required
-                          value={cardData.cardNumber}
-                          onChange={(e) => setCardData({ ...cardData, cardNumber: e.target.value })}
-                          placeholder="Numéro de carte (16 chiffres)"
-                          className="w-full px-3 py-1.5 bg-white border border-[#D9CDBF] rounded-lg font-mono text-xs"
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="text"
-                            required
-                            value={cardData.cardExp}
-                            onChange={(e) => setCardData({ ...cardData, cardExp: e.target.value })}
-                            placeholder="MM/AA"
-                            className="w-full px-3 py-1.5 bg-white border border-[#D9CDBF] rounded-lg font-mono text-xs"
-                          />
-                          <input
-                            type="text"
-                            required
-                            placeholder="CVV"
-                            defaultValue="782"
-                            className="w-full px-3 py-1.5 bg-white border border-[#D9CDBF] rounded-lg font-mono text-xs"
-                          />
-                        </div>
-                        <button
-                          type="submit"
-                          className="w-full py-2 bg-[#1C1917] text-[#FAF7F2] rounded-full text-xs font-semibold"
-                        >
-                          Enregistrer cette carte
-                        </button>
-                      </form>
-                    )}
-                  </div>
+                    <button
+                      type="submit"
+                      disabled={!isMMPhoneValid}
+                      className={`w-full py-2.5 rounded-full text-xs font-bold transition-all disabled:opacity-50 ${
+                        mmOperator === 'MTN'
+                          ? 'bg-[#FFCC00] text-black hover:bg-[#E6B800]'
+                          : mmOperator === 'Moov'
+                          ? 'bg-[#0055A5] text-white hover:bg-[#004488]'
+                          : 'bg-[#008080] text-white hover:bg-[#006666]'
+                      }`}
+                    >
+                      Enregistrer mon numéro {activeOpInfo.name}
+                    </button>
+                  </form>
                 )}
               </div>
             )}
 
-            {/* TAB 3: ORDERS (Initially 0) */}
+            {/* TAB 3: ORDERS */}
             {activeTab === 'orders' && (
               <div className="space-y-3">
                 <span className="text-[10px] uppercase font-semibold text-[#8C7A68] tracking-wider block">
@@ -621,24 +528,81 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
                     <p className="text-[11px] text-[#78716C]">Vous n'avez passé aucune commande pour le moment.</p>
                   </div>
                 ) : (
-                  <div className="space-y-2.5">
+                  <div className="space-y-3">
                     {orders.map((order) => (
-                      <div key={order.id} className="bg-[#FCFAF7] border border-[#ECE3D5] rounded-xl p-3 space-y-1.5 text-xs">
-                        <div className="flex justify-between items-center text-[11px] pb-1 border-b border-[#ECE3D5]">
-                          <span className="font-mono font-bold text-[#1C1917]">#{order.id}</span>
-                          <span className="bg-[#F3ECE1] text-[#2E2823] px-1.5 py-0.2 rounded-full font-medium">
-                            {order.status}
+                      <div key={order.id} className="bg-[#FCFAF7] border border-[#ECE3D5] rounded-2xl p-3.5 space-y-2.5 text-xs shadow-2xs">
+                        {/* Order Header */}
+                        <div className="flex justify-between items-center text-[11px] pb-1.5 border-b border-[#ECE3D5]">
+                          <span className="font-semibold text-[#1C1917]">Commande du {order.date}</span>
+                          <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                            order.status === 'Livrée'
+                              ? 'bg-green-100 text-green-800'
+                              : order.status === 'Expédiée'
+                              ? 'bg-blue-100 text-blue-800'
+                              : order.status === 'Litige'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-[#F3ECE1] text-[#2E2823]'
+                          }`}>
+                            {order.status === 'Expédiée'
+                              ? 'En cours de livraison'
+                              : order.status === 'Litige'
+                              ? 'Livraison reportée'
+                              : order.status === 'Confirmée'
+                              ? 'Payée - À préparer'
+                              : order.status}
                           </span>
                         </div>
-                        {order.items.map((it, idx) => (
-                          <div key={idx} className="flex justify-between text-[11px] text-[#44403C]">
-                            <span className="truncate max-w-[190px]">{it.quantity}x {it.productName}</span>
-                            <span className="tabular-nums font-medium">{it.price * it.quantity} €</span>
+
+                        {/* CODE DE LIVRAISON CLIENT */}
+                        {order.deliveryCode && (
+                          <div className="bg-[#1C1917] text-[#FAF7F2] rounded-xl p-3 space-y-1.5 text-center">
+                            <span className="text-[10px] uppercase font-bold text-[#D6C7B2] flex items-center justify-center gap-1">
+                              <KeyRound className="w-3 h-3 text-[#E6C694]" />
+                              <span>Votre Code de Livraison</span>
+                            </span>
+                            <div className="py-1 bg-[#292524] rounded-lg border border-[#443E38]">
+                              <p className="font-mono font-bold text-xl tracking-[0.2em] text-[#FFDE9E] select-all">
+                                {order.deliveryCode}
+                              </p>
+                            </div>
+                            <p className="text-[10px] text-[#A89887]">
+                              {order.status === 'Livrée'
+                                ? '✓ Livraison confirmée par le livreur.'
+                                : 'À communiquer au livreur à la réception de votre colis.'}
+                            </p>
                           </div>
-                        ))}
-                        <div className="flex justify-between font-bold pt-1 border-t border-[#ECE3D5] text-xs">
-                          <span>Total</span>
-                          <span className="tabular-nums">{order.total.toFixed(2)} €</span>
+                        )}
+
+                        {/* Items list */}
+                        <div className="space-y-1 pt-0.5">
+                          {order.items.map((it, idx) => (
+                            <div key={idx} className="flex justify-between text-[11px] text-[#44403C]">
+                              <span className="truncate max-w-[200px]">{it.quantity}x {it.productName}</span>
+                              <span className="tabular-nums font-medium">{formatFCFA(it.price * it.quantity)}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Assigned courier info if present */}
+                        {order.assignedDeliveryAgentName && (
+                          <div className="p-2 bg-[#FAF7F2] rounded-xl border border-[#ECE4D8] flex items-center justify-between text-[11px]">
+                            <span className="text-[#78716C] flex items-center gap-1">
+                              <Truck className="w-3.5 h-3.5 text-[#C1931E]" />
+                              <span>Livreur : <strong>{order.assignedDeliveryAgentName}</strong></span>
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Destination */}
+                        <div className="text-[10px] text-[#78716C] pt-1 border-t border-[#ECE3D5] flex items-start gap-1">
+                          <MapPin className="w-3 h-3 text-[#C1931E] shrink-0 mt-0.5" />
+                          <span className="truncate">{order.shippingAddress}</span>
+                        </div>
+
+                        {/* Price summary */}
+                        <div className="flex justify-between items-baseline font-bold pt-1 border-t border-[#ECE3D5] text-xs">
+                          <span className="text-[#57534E]">Total payé (FedaPay)</span>
+                          <span className="tabular-nums text-[#1C1917] font-serif-luxury text-sm">{formatFCFA(order.total)}</span>
                         </div>
                       </div>
                     ))}
@@ -648,8 +612,9 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
             )}
           </div>
 
-          <div className="p-3 border-t border-[#ECE3D5] bg-[#FCFAF7] text-center text-[10px] text-[#9A8977]">
-            OrA · Montres & Parfums
+          {/* Footer note */}
+          <div className="p-3 bg-[#FCFAF7] border-t border-[#ECE3D5] text-center text-[10px] text-[#A89887]">
+            Passerelle FedaPay Bénin · MTN MoMo · Moov Money · Celtiis Cash
           </div>
         </aside>
       </div>

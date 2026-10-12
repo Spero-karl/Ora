@@ -8,7 +8,7 @@ export interface Product {
   discountPercentage?: number;
   isRecent?: boolean;
   isPromo?: boolean;
-  isFeaturedInHero?: boolean; // Admin can toggle whether this item is in the hero carousel
+  isFeaturedInHero?: boolean;
   promoBadgeText?: string;
   image: string;
   description: string;
@@ -24,14 +24,6 @@ export interface CartItem {
   product: Product;
   quantity: number;
   selectedColor?: string;
-}
-
-export interface SavedCard {
-  cardNumber: string;
-  cardHolder: string;
-  cardExp: string;
-  cardBrand: string;
-  last4: string;
 }
 
 export interface SavedMobileMoney {
@@ -50,10 +42,10 @@ export interface UserProfile {
   postalCode: string;
   country: string;
   avatarUrl?: string;
-  savedCard?: SavedCard | null;
   savedMobileMoney?: SavedMobileMoney | null;
-  role?: 'guest' | 'customer' | 'admin';
+  role?: 'guest' | 'customer' | 'admin' | 'delivery';
   isAdmin?: boolean;
+  deliveryAgentId?: string;
 }
 
 export interface OrderItem {
@@ -64,6 +56,40 @@ export interface OrderItem {
   quantity: number;
 }
 
+export interface OrderEvent {
+  id: string;
+  timestamp: number;
+  action: string;
+  actor: string; // e.g. "Client", "Livreur (Marc Dossou)", "Passerelle FedaPay", "Admin"
+  details?: string;
+}
+
+export interface DeliveryAgent {
+  id: string;
+  name: string;
+  phone: string;
+  zone: string; // e.g. "Cotonou Littoral & Haie Vive", "Abomey-Calavi & Godomey", "Akpakpa & Porto-Novo"
+  status: 'active' | 'in_transit' | 'offline';
+  completedDeliveries: number;
+  rating: number;
+  joinedDate: string;
+  vehicle?: string;
+}
+
+export type OrderStatus =
+  | 'Confirmée' // Fonds sécurisés sous séquestre
+  | 'En préparation' // Commande en cours de conditionnement
+  | 'Expédiée' // Remise au livreur, en route
+  | 'Livrée' // Code validé par le livreur, fonds débloqués
+  | 'Litige' // Colis refusé, échec ou anomalie, fonds bloqués
+  | 'Remboursée'; // Remboursé au client via FedaPay
+
+export type EscrowStatus =
+  | 'held' // Fonds sécurisés sous séquestre
+  | 'released' // Fonds débloqués au vendeur
+  | 'disputed' // Fonds bloqués sous séquestre en litige
+  | 'refunded'; // Fonds restitués au client
+
 export interface Order {
   id: string;
   clientId: string;
@@ -73,7 +99,15 @@ export interface Order {
   subtotal: number;
   shipping: number;
   total: number;
-  status: 'Confirmée' | 'En préparation' | 'Expédiée' | 'Livrée';
+  status: OrderStatus;
+  escrowStatus: EscrowStatus;
+  deliveryCode: string; // Code OTP unique généré après paiement, e.g. "LIV-8492"
+  assignedDeliveryAgentId?: string;
+  assignedDeliveryAgentName?: string;
+  deliveredAt?: number;
+  deliveryNote?: string;
+  disputeReason?: string;
+  timeline: OrderEvent[];
   shippingAddress: string;
   paymentMethod: string;
   buyerName?: string;
@@ -101,5 +135,18 @@ export interface ClientAccount {
   orders: Order[];
   totalSpent: number;
   supportExpiresAt?: number;
-  supportDurationHours?: number; // default 24h
+  supportDurationHours?: number;
+}
+
+export interface DeliveryNotification {
+  id: string;
+  agentId: string;
+  orderId: string;
+  orderNumber?: string;
+  customerName: string;
+  shippingAddress: string;
+  amount: number;
+  timestamp: number;
+  read: boolean;
+  message: string;
 }

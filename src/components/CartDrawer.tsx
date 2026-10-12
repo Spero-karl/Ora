@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Trash2, Plus, Minus, ArrowRight, ShoppingBag } from 'lucide-react';
 import { CartItem } from '../types';
+import { formatFCFA } from '../utils/formatCurrency';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -88,7 +89,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         {item.product.name}
                       </h4>
                       <p className="text-xs font-bold text-[#1C1917] tabular-nums mt-0.5">
-                        {item.product.price} €
+                        {formatFCFA(item.product.price)}
                       </p>
 
                       <div className="flex items-center gap-2.5 mt-1.5">
@@ -136,7 +137,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <div className="space-y-1 text-xs">
                 <div className="flex justify-between text-[#78716C]">
                   <span>Sous-total</span>
-                  <span className="font-semibold text-[#1C1917] tabular-nums">{subtotal} €</span>
+                  <span className="font-semibold text-[#1C1917] tabular-nums">{formatFCFA(subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-[#78716C]">
                   <span>Livraison</span>
@@ -144,7 +145,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
                 <div className="border-t border-[#ECE3D5] pt-1.5 flex justify-between text-sm font-bold text-[#1C1917]">
                   <span>Total</span>
-                  <span className="tabular-nums text-base">{subtotal} €</span>
+                  <span className="tabular-nums text-base">{formatFCFA(subtotal)}</span>
                 </div>
               </div>
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShoppingBag, Star, Plus, Check } from 'lucide-react';
 import { Product } from '../types';
+import { formatFCFA } from '../utils/formatCurrency';
 
 interface ProductCardProps {
   product: Product;
@@ -89,13 +90,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <div className="pt-2 border-t border-[#ECE3D5]/80 space-y-1.5">
           {/* Price */}
           <div className="flex items-baseline justify-between gap-1">
-            <div className="flex items-baseline gap-1">
-              <span className="font-serif-luxury text-sm sm:text-base font-bold text-[#1C1917] tabular-nums">
-                {product.price} €
+            <div className="flex items-baseline gap-1 flex-wrap">
+              <span className="font-serif-luxury text-xs sm:text-sm font-bold text-[#1C1917] tabular-nums">
+                {formatFCFA(product.price)}
               </span>
               {product.originalPrice && (
-                <span className="text-[10px] line-through text-[#A89887] tabular-nums">
-                  {product.originalPrice} €
+                <span className="text-[9px] line-through text-[#A89887] tabular-nums">
+                  {formatFCFA(product.originalPrice)}
                 </span>
               )}
             </div>

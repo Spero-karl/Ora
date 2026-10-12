@@ -112,21 +112,75 @@ L'assistance n'est pas intrusive et respecte le parcours d'achat :
 
 ---
 
-## 8. Moyens de Paiement Disponibles (4 Méthodes)
+## 8. Passerelle FedaPay, Séquestre (Escrow) & Moyens de Paiement Bénin (FCFA)
 
-Lors de la commande, le client a le choix exclusif entre ces 4 options :
-1. **Google Pay (`GPay`)** : Règlement sécurisé en 1 clic via le compte Google.
-2. **Carte bancaire** : Utilisation de la carte enregistrée du client ou saisie d'une nouvelle carte sécurisée.
-3. **Apple Pay (`Pay`)** : Validation via Touch ID / Face ID sur terminaux compatibles.
-4. **MoMo (Mobile Money)** : Avec sélection directe des trois opérateurs régionaux :
-   - **MTN** (*MTN MoMo*)
-   - **Moov** (*Moov Money*)
-   - **Celtiis** (*Celtiis Cash*)
-   *(Saisie du numéro avec validation instantanée et option de sauvegarde pour les achats futurs).*
+Les règlements s'effectuent en **Francs CFA (FCFA)** via la passerelle officielle **FedaPay Bénin** par Mobile Money :
+1. **MTN Bénin (`MTN MoMo`)**
+2. **Moov Africa Bénin (`Moov Money`)**
+3. **Celtiis Bénin (`Celtiis Cash`)**
+
+- **Montant facture = Montant prélevé** : Le montant de la facture correspond exactement à ce qui est prélevé du compte Mobile Money du client, sans frais cachés ni conversion.
+- **Confirmation obligatoire côté client** : Le client valide interactivement la transaction. En cas de refus, aucun prélèvement n'est effectué.
+- **Sécurisation par Séquestre (Escrow)** :
+  - Dès le paiement validé, les fonds sont placés sous **séquestre bloqué** (`held`).
+  - L'argent n'est pas encore versé au vendeur : il est garanti et sécurisé jusqu'à la remise physique du colis.
+- **Code Secret Unique de Remise (`LIV-XXXX`)** :
+  - Un code OTP confidentiel unique est généré pour le client après son paiement.
+  - Ce code constitue la **preuve irréfutable de son engagement** et les conditions de remise en main propre.
+  - Le client garde ce code secret et ne le communique au livreur qu'au moment où il a vérifié et réceptionné son colis.
 
 ---
 
-## 9. Mode Hors-Ligne & Installation PWA
+## 9. Flotte Livreurs & Portail Dédié (`Portail Livreur OrA`)
+
+Pour professionnaliser les livraisons et créer des opportunités d'emploi, un **Espace Livreur dédié** est intégré :
+- **Comptes Livreurs dédiés** : Marc Dossou (Cotonou), Roland Houessou (Abomey-Calavi), Aurel Tossou (Akpakpa & Porto-Novo), etc.
+- **Accès rapide au Portail** : Accessible directement depuis le bouton « Espace Livreur » dans l'en-tête, la fenêtre de connexion, ou depuis la console Administrateur.
+- **Tournée & Colis assignés** : Le livreur consulte les colis qui lui sont affectés dans sa zone d'intervention, avec l'adresse précise, le quartier et le **repère béninois** (ex. « En face de la pharmacie, portail vert ») et un bouton d'appel direct vers le client.
+- **Validation de la Remise & Déblocage des Fonds** :
+  - Le livreur demande le code unique communiqué par le client (`LIV-XXXX`) et le saisit dans son portail.
+  - Si le code correspond, la livraison est validée (`Livrée`), et les fonds sous séquestre sont **immédiatement débloqués au profit du vendeur** (`released`).
+- **Gestion des Échecs & Refus Colis (Litiges)** :
+  - Si le client refuse le colis (non-conformité, changement d'avis) ou est injoignable, le livreur clique sur **« Signaler un problème »**.
+  - La commande bascule instantanément en **Litige** (`Litige`), et les fonds restent **strictement bloqués sous séquestre**.
+  - L'argent n'est jamais débloqué automatiquement en cas d'anomalie.
+
+---
+
+## 10. Suivi Financier & Arbitrage des Litiges (Console Admin)
+
+Le tableau de bord administrateur propose une vision financière en 4 volets :
+1. **Volume Global Traité** : Total des transactions enregistrées.
+2. **Argent en Séquestre (En Attente)** : Sommes bloquées correspondant aux commandes confirmées, en préparation ou en cours de livraison.
+3. **Argent Débloqué (Encaissé)** : Sommes dont la livraison a été certifiée par le code de remise du client.
+4. **Litiges & Remboursements** : Commandes nécessitant arbitrage.
+- **Affectation des livreurs** : L'administrateur attribue chaque commande au livreur opérant dans la zone correspondante.
+- **Arbitrage d'un litige** : L'administrateur peut arbitrer en 1 clic :
+  - Soit *« Débloquer au vendeur »* si la livraison a finalement été conclue.
+  - Soit *« Rembourser le client »* pour déclencher le remboursement FedaPay vers son Mobile Money.
+- **Historique d'audit (Audit Trail)** : Chaque action (paiement, séquestre, affectation, saisie du code, arbitrage) est tracée et horodatée avec l'auteur de l'action.
+
+---
+
+## 11. Architecture Technique : Base de Données & Prestataire Séquestre
+
+### État actuel de la persistance
+- **Stockage actuel** : Les données (produits, commandes, clients, livreurs, historiques) sont actuellement persistées dans le `localStorage` du navigateur.
+- **Transition vers la production** :
+  - Pour que des clients et des livreurs distincts interagissent sur des smartphones différents en temps réel, le système doit être connecté à une base de données cloud centralisée (telle que **Firebase Cloud Firestore** ou **Cloud SQL PostgreSQL**).
+  - Cela permet la synchronisation temps réel des statuts de livraison entre le téléphone du client, celui du livreur et la console du gérant.
+
+### Prestataire de sécurisation des fonds (Séquestre au Bénin / UEMOA)
+1. **FedaPay (Recommandé au Bénin)** :
+   - FedaPay propose l'intégration Mobile Money (MTN MoMo, Moov Money, Celtiis Cash).
+   - **Mécanisme de séquestre** : FedaPay permet d'encaisser les fonds sur le compte marchand, puis d'exécuter un **Payout différé par API** (service de transfert/décaissement) vers le sous-compte du vendeur ou des livreurs uniquement lorsque le webhook de validation du code est reçu.
+2. **KKiaPay Bénin** : Propose également la collecte MTN/Moov/Celtiis et des décaissements automatisés par API (KKiaPay Payouts).
+3. **CinetPay (UEMOA)** : Gestion des transferts et paiements différés par API de reversement.
+4. **Compte séquestre bancaire conventionné (Escrow conventionné)** : Pour des volumes importants, convention de séquestre avec une banque locale (ex: BOA, Ecobank, Coris Bank) garantissant le cantonnement des fonds jusqu'à quittance de livraison.
+
+---
+
+## 12. Mode Hors-Ligne & Installation PWA
 
 - **Progressive Web App (PWA)** : Le site est installable sur écran d'accueil (Android, iOS Safari, macOS, Windows).
 - **Disponibilité hors-connexion** : Toutes les photos et les pages sont mises en cache automatique par le Service Worker (`CacheFirst`). Même sans réseau Internet, les pièces et les informations restent consultables.
@@ -134,4 +188,4 @@ Lors de la commande, le client a le choix exclusif entre ces 4 options :
 
 ---
 
-*Guide officiel OrA — Maison de Haute Horlogerie & Parfumerie.*
+*Guide officiel OrA — Maison de Haute Horlogerie & Parfumerie Bénin.*

@@ -1,6 +1,6 @@
 {
-  "name": "ATELIER - Boutique & Sélection",
-  "description": "Boutique en ligne élégante et épurée d'articles design, récents et en promotion avec paiement simplifié et gestion de profil.",
+  "name": "OrA - Haute Horlogerie & Parfumerie (Android APK)",
+  "description": "Application mobile Android native (APK / Capacitor) et Web de la Maison OrA, haute horlogerie et parfumerie d'exception.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -49,4 +49,3 @@ L'application sera accessible sur `http://localhost:3000`.
 - **Tailwind CSS v4**
 - **Lucide React** (icônes)
 - **Local Storage** pour la persistance du panier, du profil utilisateur et de la carte enregistrée
-"# Ora" 

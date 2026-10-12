@@ -145,7 +145,7 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({
               <div className="text-center py-6 space-y-2 text-[#78716C]">
                 <Headphones className="w-6 h-6 text-[#A89887] mx-auto stroke-1" />
                 <p className="text-xs">
-                  Bonjour {currentUser.name} ! Avez-vous besoin d'aide pour finaliser votre règlement MoMo ou carte ?
+                  Bonjour {currentUser.name} ! Avez-vous besoin d'aide pour finaliser votre règlement Mobile Money Bénin (MTN MoMo, Moov Money ou Celtiis Cash) ?
                 </p>
               </div>
             ) : (

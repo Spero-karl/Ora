@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { User, Search, ShoppingBag, X, LogIn, LogOut, Shield } from 'lucide-react';
+import { User, Search, ShoppingBag, X, LogIn, LogOut, Shield, Smartphone, Truck } from 'lucide-react';
 import { UserProfile } from '../types';
 
 interface HeaderProps {
   onOpenProfile: () => void;
   onOpenAuth: () => void;
   onOpenAdmin: () => void;
+  onOpenDelivery?: () => void;
   onLogout: () => void;
   onOpenCart: () => void;
+  onOpenInstallModal?: () => void;
+  isInstalled?: boolean;
   cartCount: number;
   searchQuery: string;
   onSearchChange: (query: string) => void;
@@ -18,8 +21,11 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenProfile,
   onOpenAuth,
   onOpenAdmin,
+  onOpenDelivery,
   onLogout,
   onOpenCart,
+  onOpenInstallModal,
+  isInstalled,
   cartCount,
   searchQuery,
   onSearchChange,
@@ -28,6 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [searchOpen, setSearchOpen] = useState(false);
   const isGuest = userProfile.role === 'guest' || userProfile.name === 'Invité';
   const isAdmin = userProfile.isAdmin || userProfile.id?.startsWith('AD-') || userProfile.email?.startsWith('AD-');
+  const isDelivery = userProfile.role === 'delivery';
 
   return (
     <header className="sticky top-0 z-40 bg-[#FAF7F2]/95 backdrop-blur-md border-b border-[#ECE4D8]">
@@ -54,7 +61,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={onOpenAdmin}
                 type="button"
                 className="flex items-center gap-1.5 py-1 px-2.5 bg-[#1C1917] text-[#E6C694] hover:bg-[#2A2623] rounded-full border border-[#D4AF37]/40 shadow-xs transition-all active:scale-95 text-xs font-semibold"
-                title="Ouvrir le panneau Administrateur"
+                title="Ouvrir la Console Administrateur plein écran"
               >
                 <span>👑</span>
                 <span>{userProfile.id || 'AD-Admin'}</span>
@@ -116,8 +123,23 @@ export const Header: React.FC<HeaderProps> = ({
           </a>
         </div>
 
-        {/* Right: Search & Cart Button */}
+        {/* Right: Install App Button, Search & Cart Button */}
         <div className="flex items-center gap-1 sm:gap-2">
+
+          {/* Mobile APK / App Install Trigger */}
+          {onOpenInstallModal && !isInstalled && (
+            <button
+              type="button"
+              onClick={onOpenInstallModal}
+              className="hidden xs:flex items-center gap-1 py-1 px-2.5 bg-[#F4ECE1] hover:bg-[#ECE3D5] text-[#1C1917] rounded-full border border-[#D9CDBF] text-[11px] font-medium transition-all active:scale-95"
+              title="Installer l'application sur smartphone (APK Android & iOS)"
+            >
+              <Smartphone className="w-3 h-3 text-[#8C7A68]" />
+              <span className="hidden sm:inline">App Mobile</span>
+              <span className="sm:hidden">App</span>
+            </button>
+          )}
+
           {/* Search Trigger */}
           <div className="relative flex items-center">
             {searchOpen ? (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, ArrowRight, Tag } from 'lucide-react';
 import { Product } from '../types';
+import { formatFCFA } from '../utils/formatCurrency';
 
 interface HeroCarouselProps {
   onSelectProductForCheckout: (product: Product) => void;
@@ -100,13 +101,13 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
 
             {/* Price & CTA */}
             <div className="pt-1 flex items-center gap-3 sm:gap-5">
-              <div className="flex items-baseline gap-1.5">
-                <span className="font-serif-luxury text-lg sm:text-2xl font-bold tabular-nums text-white">
-                  {currentProduct.price} €
+              <div className="flex items-baseline gap-1.5 flex-wrap">
+                <span className="font-serif-luxury text-base sm:text-xl font-bold tabular-nums text-white">
+                  {formatFCFA(currentProduct.price)}
                 </span>
                 {currentProduct.originalPrice && (
-                  <span className="text-xs sm:text-sm line-through text-[#8C7A68] tabular-nums">
-                    {currentProduct.originalPrice} €
+                  <span className="text-xs line-through text-[#8C7A68] tabular-nums">
+                    {formatFCFA(currentProduct.originalPrice)}
                   </span>
                 )}
               </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Star, ShoppingBag, ArrowRight, ShieldCheck, Truck, RotateCcw, Plus, Check } from 'lucide-react';
 import { Product } from '../types';
+import { formatFCFA } from '../utils/formatCurrency';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -78,13 +79,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   </h2>
                 </div>
 
-                <div className="flex items-baseline gap-2.5">
-                  <span className="text-2xl font-serif-luxury font-medium text-[#1C1917] tabular-nums">
-                    {product.price} €
+                <div className="flex items-baseline gap-2.5 flex-wrap">
+                  <span className="text-xl sm:text-2xl font-serif-luxury font-medium text-[#1C1917] tabular-nums">
+                    {formatFCFA(product.price)}
                   </span>
                   {product.originalPrice && (
-                    <span className="text-sm line-through text-[#A89887] tabular-nums font-light">
-                      {product.originalPrice} €
+                    <span className="text-xs sm:text-sm line-through text-[#A89887] tabular-nums font-light">
+                      {formatFCFA(product.originalPrice)}
                     </span>
                   )}
                 </div>
@@ -105,7 +106,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   className="w-full py-3 px-4 bg-[#1C1917] hover:bg-[#2A2623] text-[#FAF7F2] rounded-full text-xs font-medium uppercase tracking-widest transition-all duration-200 active:scale-98 flex items-center justify-center gap-2 shadow-2xs"
                 >
                   <ShoppingBag className="w-3.5 h-3.5" />
-                  <span>Acheter maintenant (Page de paiement)</span>
+                  <span>Acheter maintenant</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
 
