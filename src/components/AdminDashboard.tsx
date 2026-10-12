@@ -220,7 +220,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       id: `prod-${Date.now()}`,
       name: '',
       price: 150000,
-      image: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=800&auto=format&fit=crop',
+      image: '/images/nouvelle-montre.jpg',
       description: 'Pièce authentique d’exception pour le Bénin.',
       category: 'Horlogerie',
       categorySlug: 'horlogerie',
@@ -1200,14 +1200,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">URL de l'image</label>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Photo du produit (ex: /images/nouvelle-montre.jpg ou URL)
+                </label>
                 <input
-                  type="url"
+                  type="text"
                   value={editingProduct.image}
                   onChange={(e) => setEditingProduct({ ...editingProduct, image: e.target.value })}
+                  placeholder="/images/nouvelle-montre.jpg"
                   required
                   className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-300 rounded-xl font-medium focus:outline-none focus:border-slate-900"
                 />
+                <p className="text-xs text-slate-500 mt-1">
+                  Placez vos photos dans <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-slate-800">public/images/</code> avec un nom simple (ex: <span className="font-semibold text-slate-700">nouvelle-montre.jpg</span>).
+                </p>
               </div>
 
               <div className="pt-2 flex justify-end gap-2">
